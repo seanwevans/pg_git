@@ -1,0 +1,55 @@
+# PostgreSQL extension files
+*.o
+*.so
+*.bc
+*.a
+*.pc
+regression.*
+results/
+
+# Build artifacts
+/tmp/
+
+# Debian package files
+debian/*.log
+debian/*.substvars
+debian/*.debhelper
+debian/files
+debian/postgresql-*-pg-git/
+debian/postgresql-*-pg-git.postrm.debhelper
+debian/postgresql-*-pg-git.prerm.debhelper
+debian/*.ex
+debian/*.EX
+
+# Docker artifacts
+.env
+docker-compose.override.yml
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Test files
+regression.diffs
+regression.out
+test/tmp/
+test/log/
+
+# Other
+core
+*.core
+vgcore.*
+tags
+TAGS

@@ -1,0 +1,44 @@
+{
+    "name": "pg_git",
+    "abstract": "Git implementation in PostgreSQL",
+    "description": "A PostgreSQL extension implementing Git-like version control functionality using native database features",
+    "version": "0.2.0",
+    "maintainer": [
+        "Your Name <your.email@example.com>"
+    ],
+    "license": "postgresql",
+    "provides": {
+        "pg_git": {
+            "abstract": "Git implementation in PostgreSQL",
+            "file": "sql/pg_git--0.2.0.sql",
+            "docfile": "README.md",
+            "version": "0.2.0"
+        }
+    },
+    "prereqs": {
+        "runtime": {
+            "requires": {
+                "PostgreSQL": "12.0.0",
+                "plpgsql": 0
+            }
+        }
+    },
+    "resources": {
+        "repository": {
+            "url": "https://github.com/yourusername/pg_git.git",
+            "web": "https://github.com/yourusername/pg_git",
+            "type": "git"
+        }
+    },
+    "generated_by": "Your Name",
+    "meta-spec": {
+        "version": "1.0.0",
+        "url": "https://pgxn.org/meta/spec.txt"
+    },
+    "tags": [
+        "git",
+        "version control",
+        "vcs",
+        "repository"
+    ]
+}
