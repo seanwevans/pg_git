@@ -121,12 +121,16 @@ pg_git/
 ## Dependencies
 - PostgreSQL 12+
 - PL/pgSQL
+- pgcrypto
+- pg_trgm
 
 ## Installation
 ```bash
 make && make install
 
 # In PostgreSQL:
+CREATE EXTENSION pgcrypto;
+CREATE EXTENSION pg_trgm;
 CREATE EXTENSION pg_git;
 ```
 
