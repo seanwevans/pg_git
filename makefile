@@ -1,5 +1,5 @@
 EXTENSION = pg_git
-EXTVERSION = 0.2.0
+EXTVERSION = 0.4.0
 
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)

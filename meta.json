@@ -2,7 +2,7 @@
     "name": "pg_git",
     "abstract": "Git implementation in PostgreSQL",
     "description": "A PostgreSQL extension implementing Git-like version control functionality using native database features",
-    "version": "0.2.0",
+    "version": "0.4.0",
     "maintainer": [
         "Your Name <your.email@example.com>"
     ],
@@ -10,9 +10,9 @@
     "provides": {
         "pg_git": {
             "abstract": "Git implementation in PostgreSQL",
-            "file": "sql/pg_git--0.2.0.sql",
+            "file": "sql/pg_git--0.4.0.sql",
             "docfile": "README.md",
-            "version": "0.2.0"
+            "version": "0.4.0"
         }
     },
     "prereqs": {
