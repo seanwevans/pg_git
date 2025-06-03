@@ -1,12 +1,4 @@
 -- Schema for staging area (index)
-CREATE TABLE index_entries (
-    repo_id INTEGER REFERENCES repositories(id),
-    path TEXT NOT NULL,
-    blob_hash TEXT NOT NULL REFERENCES blobs(hash),
-    mode TEXT NOT NULL DEFAULT '100644',  -- Regular file
-    staged_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (repo_id, path)
-);
 
 -- Function to stage a file
 CREATE OR REPLACE FUNCTION stage_file(

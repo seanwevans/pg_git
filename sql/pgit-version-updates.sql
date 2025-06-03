@@ -45,6 +45,7 @@ CREATE SCHEMA pg_git;
 
 -- Load core schema
 \ir ../schema/001-core.sql
+\ir ../schema/pgit-schema.sql
 
 -- Load all functions in order
 \ir ../functions/001-init.sql
