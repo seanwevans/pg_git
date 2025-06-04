@@ -1,0 +1,8 @@
+.git
+.github
+.gitlab-ci.yml
+debian/
+*.deb
+*.o
+*.so
+
