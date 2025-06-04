@@ -214,4 +214,4 @@ SELECT pg_git.grep(1, 'pattern');
 Current: 0.4.0
 
 ## License
-PostgreSQL License
+See [LICENSE](LICENSE) for the full text of the PostgreSQL License.
