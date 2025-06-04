@@ -5,14 +5,6 @@ CREATE TABLE repositories (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE index_entries (
-    repo_id INTEGER REFERENCES repositories(id),
-    path TEXT NOT NULL,
-    blob_hash TEXT NOT NULL REFERENCES blobs(hash),
-    staged_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (repo_id, path)
-);
-
 CREATE OR REPLACE FUNCTION init_repository(
     p_name TEXT,
     p_path TEXT
