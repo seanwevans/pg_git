@@ -8,7 +8,7 @@ DATA = $(wildcard sql/schema/*.sql) \
        $(wildcard sql/functions/*.sql) \
        $(wildcard sql/updates/*.sql)
 
-TESTS = $(wildcard test/sql/*.sql)
+TESTS := $(wildcard test/sql/*.sql)
 REGRESS = $(patsubst test/sql/%.sql,%,$(TESTS))
 REGRESS_OPTS = --inputdir=test
 
