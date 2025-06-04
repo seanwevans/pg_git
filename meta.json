@@ -19,7 +19,9 @@
         "runtime": {
             "requires": {
                 "PostgreSQL": "12.0.0",
-                "plpgsql": 0
+                "plpgsql": 0,
+                "pgcrypto": 0,
+                "pg_trgm": 0
             }
         }
     },
