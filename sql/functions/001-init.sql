@@ -40,6 +40,9 @@ BEGIN
     
     -- Create master branch
     PERFORM update_ref('master', v_initial_commit);
+
+    -- Set HEAD to initial commit so subsequent commands work
+    PERFORM update_ref('HEAD', v_initial_commit);
     
     RETURN v_repo_id;
 END;
