@@ -11,7 +11,7 @@ DECLARE
     v_blob_hash TEXT;
 BEGIN
     -- Create blob from file content
-    v_blob_hash := create_blob(p_content);
+    v_blob_hash := create_blob(p_repo_id, p_content);
     
     -- Update index
     INSERT INTO index_entries (repo_id, path, blob_hash, mode)

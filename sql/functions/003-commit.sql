@@ -18,7 +18,7 @@ BEGIN
     FROM index_entries
     WHERE repo_id = p_repo_id;
 
-    RETURN pg_git.create_tree(COALESCE(v_entries, '[]'::jsonb));
+    RETURN pg_git.create_tree(p_repo_id, COALESCE(v_entries, '[]'::jsonb));
 END;
 $$ LANGUAGE plpgsql;
 
@@ -35,13 +35,14 @@ BEGIN
     -- Get current HEAD
     SELECT commit_hash INTO v_parent_hash
     FROM refs
-    WHERE name = 'HEAD';
+    WHERE repo_id = p_repo_id AND name = 'HEAD';
 
     -- Create tree from index
     v_tree_hash := pg_git.create_tree_from_index(p_repo_id);
 
     -- Create commit
     v_commit_hash := pg_git.create_commit(
+        p_repo_id,
         v_tree_hash,
         v_parent_hash,
         p_author,
@@ -49,7 +50,7 @@ BEGIN
     );
 
     -- Update HEAD and current branch
-    UPDATE refs SET commit_hash = v_commit_hash WHERE name = 'HEAD';
+    UPDATE refs SET commit_hash = v_commit_hash WHERE repo_id = p_repo_id AND name = 'HEAD';
 
     -- Clear index
     DELETE FROM index_entries WHERE repo_id = p_repo_id;

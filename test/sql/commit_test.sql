@@ -16,13 +16,13 @@ SELECT lives_ok(
 );
 
 SELECT results_eq(
-    $$SELECT message FROM commits ORDER BY timestamp DESC LIMIT 1$$,
+    $$SELECT message FROM commits WHERE repo_id = :repo_id ORDER BY timestamp DESC LIMIT 1$$,
     $$VALUES ('test commit')$$,
     'Commit message stored correctly'
 );
 
 SELECT results_eq(
-    $$SELECT author FROM commits ORDER BY timestamp DESC LIMIT 1$$,
+    $$SELECT author FROM commits WHERE repo_id = :repo_id ORDER BY timestamp DESC LIMIT 1$$,
     $$VALUES ('test_author')$$,
     'Commit author stored correctly'
 );
@@ -30,7 +30,7 @@ SELECT results_eq(
 -- Test commit tree content
 SELECT results_eq(
     $$SELECT jsonb_array_length(entries) FROM trees t
-    JOIN commits c ON c.tree_hash = t.hash
+    JOIN commits c ON c.repo_id = :repo_id AND c.tree_hash = t.hash AND t.repo_id = :repo_id
     ORDER BY c.timestamp DESC LIMIT 1$$,
     $$VALUES (1)$$,
     'Commit tree has correct number of entries'
@@ -58,7 +58,7 @@ SELECT results_eq(
 
 -- Test parent relationship
 SELECT results_eq(
-    $$SELECT COUNT(*) FROM commits WHERE parent_hash IS NOT NULL$$,
+    $$SELECT COUNT(*) FROM commits WHERE repo_id = :repo_id AND parent_hash IS NOT NULL$$,
     $$VALUES (1)$$,
     'Parent relationship stored correctly'
 );

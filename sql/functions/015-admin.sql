@@ -15,19 +15,19 @@ BEGIN
     -- Collect all reachable objects
     WITH RECURSIVE reachable AS (
         -- Start from refs
-        SELECT commit_hash as hash FROM refs
+        SELECT commit_hash as hash FROM refs WHERE repo_id = p_repo_id
         UNION
         -- Get commit objects
         SELECT hash FROM commits
-        WHERE hash = ANY(v_reachable_objects)
+        WHERE repo_id = p_repo_id AND hash = ANY(v_reachable_objects)
         UNION
         -- Get tree objects
         SELECT hash FROM trees
-        WHERE hash = ANY(v_reachable_objects)
+        WHERE repo_id = p_repo_id AND hash = ANY(v_reachable_objects)
         UNION
         -- Get blob objects
         SELECT hash FROM blobs
-        WHERE hash = ANY(v_reachable_objects)
+        WHERE repo_id = p_repo_id AND hash = ANY(v_reachable_objects)
     )
     SELECT array_agg(hash) INTO v_reachable_objects FROM reachable;
 
@@ -37,19 +37,19 @@ BEGIN
            count(*)::INTEGER,
            sum(octet_length(content))::BIGINT
     FROM blobs
-    WHERE hash <> ALL(v_reachable_objects)
+    WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
     UNION ALL
     SELECT 'trees'::TEXT,
            count(*)::INTEGER,
            sum(octet_length(entries::TEXT))::BIGINT
     FROM trees
-    WHERE hash <> ALL(v_reachable_objects)
+    WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
     UNION ALL
     SELECT 'commits'::TEXT,
            count(*)::INTEGER,
            sum(octet_length(message))::BIGINT
     FROM commits
-    WHERE hash <> ALL(v_reachable_objects);
+    WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -67,7 +67,8 @@ BEGIN
            CASE WHEN count(*) = 0 THEN 'ok' ELSE 'warning' END,
            count(*) || ' dangling commits found'
     FROM commits c
-    WHERE NOT EXISTS (SELECT 1 FROM refs r WHERE r.commit_hash = c.hash);
+    WHERE c.repo_id = p_repo_id
+      AND NOT EXISTS (SELECT 1 FROM refs r WHERE r.repo_id = p_repo_id AND r.commit_hash = c.hash);
 
     -- Check broken parent links
     RETURN QUERY
@@ -75,8 +76,9 @@ BEGIN
            CASE WHEN count(*) = 0 THEN 'ok' ELSE 'error' END,
            count(*) || ' commits with invalid parent references'
     FROM commits c
-    WHERE c.parent_hash IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM commits p WHERE p.hash = c.parent_hash);
+    WHERE c.repo_id = p_repo_id
+      AND c.parent_hash IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM commits p WHERE p.repo_id = p_repo_id AND p.hash = c.parent_hash);
     
     -- Check broken tree references
     RETURN QUERY
@@ -84,7 +86,8 @@ BEGIN
            CASE WHEN count(*) = 0 THEN 'ok' ELSE 'error' END,
            count(*) || ' commits with invalid tree references'
     FROM commits c
-    WHERE NOT EXISTS (SELECT 1 FROM trees t WHERE t.hash = c.tree_hash);
+    WHERE c.repo_id = p_repo_id
+      AND NOT EXISTS (SELECT 1 FROM trees t WHERE t.repo_id = p_repo_id AND t.hash = c.tree_hash);
 END;
 $$ LANGUAGE plpgsql;
 

@@ -69,17 +69,17 @@ DECLARE
 BEGIN
     -- Get commit hashes
     SELECT commit_hash INTO v_source_commit
-    FROM refs WHERE name = p_source_branch;
+    FROM refs WHERE repo_id = p_repo_id AND name = p_source_branch;
     
     SELECT commit_hash INTO v_target_commit
-    FROM refs WHERE name = p_target_branch;
+    FROM refs WHERE repo_id = p_repo_id AND name = p_target_branch;
     
     -- Check if fast-forward is possible
     IF pg_git.can_fast_forward(v_source_commit, v_target_commit) THEN
         -- Fast-forward merge
-        UPDATE refs 
+        UPDATE refs
         SET commit_hash = v_source_commit
-        WHERE name = p_target_branch;
+        WHERE repo_id = p_repo_id AND name = p_target_branch;
         
         RETURN v_source_commit;
     END IF;
