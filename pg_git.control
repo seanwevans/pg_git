@@ -1,0 +1,5 @@
+comment = 'Git implementation in PostgreSQL'
+default_version = '0.4.0'
+schema = pg_git
+requires = 'plpgsql'
+relocatable = true
