@@ -1,9 +1,8 @@
--- Path: /sql/updates/pg_git--0.2.0--0.3.0.sql
+-- pg_git extension update from version 0.2.0 to 0.3.0
 
--- Update version
 ALTER EXTENSION pg_git UPDATE TO '0.3.0';
 
--- Add new features
+-- Add new features introduced in 0.3.0
 \i ../functions/012-migrations.sql
 \i ../functions/013-merge-conflicts.sql
 \i ../functions/014-https.sql
