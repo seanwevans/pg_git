@@ -214,8 +214,12 @@ SELECT pg_git.blame(1, 'file.txt');
 SELECT pg_git.grep(1, 'pattern');
 ```
 
-## Version
-Current: 0.4.0
+## Versions
+- **0.2.0** - initial release providing repository tables, staging and commit
+  operations.
+- **0.3.0** - adds migration support and advanced/plumbing commands.
+- **0.4.0** - introduces archive handling, submodules, sparse checkout and
+  maintenance helpers.
 
 ## License
 See [LICENSE](LICENSE) for the full text of the PostgreSQL License.
