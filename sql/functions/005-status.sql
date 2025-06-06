@@ -15,8 +15,8 @@ BEGIN
     -- Get HEAD commit and tree
     SELECT c.hash, c.tree_hash INTO v_head_commit, v_head_tree
     FROM refs r
-    JOIN commits c ON r.commit_hash = c.hash
-    WHERE r.name = 'HEAD';
+    JOIN commits c ON r.repo_id = p_repo_id AND c.repo_id = r.repo_id AND r.commit_hash = c.hash
+    WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
 
     RETURN QUERY
     -- Staged changes
@@ -35,7 +35,7 @@ BEGIN
         END,
         TRUE
     FROM index_entries i
-    LEFT JOIN trees t ON t.hash = v_head_tree
+    LEFT JOIN trees t ON t.repo_id = p_repo_id AND t.hash = v_head_tree
     WHERE i.repo_id = p_repo_id;
 END;
 $$ LANGUAGE plpgsql;

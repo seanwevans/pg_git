@@ -24,7 +24,7 @@ BEGIN
     -- Resolve target to commit hash
     IF p_target = 'HEAD' THEN
         SELECT commit_hash INTO v_target_hash
-        FROM refs WHERE name = 'HEAD';
+        FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD';
     ELSE
         v_target_hash := p_target;
     END IF;
