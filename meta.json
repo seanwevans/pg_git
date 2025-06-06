@@ -4,7 +4,7 @@
     "description": "A PostgreSQL extension implementing Git-like version control functionality using native database features",
     "version": "0.4.0",
     "maintainer": [
-        "Your Name <your.email@example.com>"
+        "pg_git maintainers <your.email@example.com>"
     ],
     "license": "postgresql",
     "provides": {
@@ -32,7 +32,7 @@
             "type": "git"
         }
     },
-    "generated_by": "Your Name",
+    "generated_by": "pg_git maintainers",
     "meta-spec": {
         "version": "1.0.0",
         "url": "https://pgxn.org/meta/spec.txt"
