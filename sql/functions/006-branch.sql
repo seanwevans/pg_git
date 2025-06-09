@@ -12,14 +12,14 @@ BEGIN
     -- Get commit hash from start point or HEAD
     IF p_start_point IS NULL THEN
         SELECT commit_hash INTO v_commit_hash
-        FROM refs WHERE name = 'HEAD';
+        FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD';
     ELSE
         v_commit_hash := p_start_point;
     END IF;
 
     -- Create branch reference
-    INSERT INTO refs (name, commit_hash)
-    VALUES (p_branch_name, v_commit_hash);
+    INSERT INTO refs (repo_id, name, commit_hash)
+    VALUES (p_repo_id, p_branch_name, v_commit_hash);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -35,8 +35,8 @@ SELECT
     r.commit_hash,
     r.commit_hash = head.commit_hash AS is_current
 FROM refs r
-CROSS JOIN (SELECT commit_hash FROM refs WHERE name = 'HEAD') head
-WHERE r.name != 'HEAD'
+CROSS JOIN (SELECT commit_hash FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD') head
+WHERE r.repo_id = p_repo_id AND r.name != 'HEAD'
 ORDER BY r.name;
 $$ LANGUAGE sql;
 
@@ -50,22 +50,22 @@ DECLARE
 BEGIN
     -- Get branch commit
     SELECT commit_hash INTO v_commit_hash
-    FROM refs WHERE name = p_branch_name;
+    FROM refs WHERE repo_id = p_repo_id AND name = p_branch_name;
     
     IF NOT FOUND AND p_create THEN
         -- Create new branch from HEAD
         SELECT commit_hash INTO v_commit_hash
-        FROM refs WHERE name = 'HEAD';
+        FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD';
         
-        INSERT INTO refs (name, commit_hash)
-        VALUES (p_branch_name, v_commit_hash);
+        INSERT INTO refs (repo_id, name, commit_hash)
+        VALUES (p_repo_id, p_branch_name, v_commit_hash);
     ELSIF NOT FOUND THEN
         RAISE EXCEPTION 'Branch % does not exist', p_branch_name;
     END IF;
 
     -- Update HEAD
     UPDATE refs SET commit_hash = v_commit_hash
-    WHERE name = 'HEAD';
+    WHERE repo_id = p_repo_id AND name = 'HEAD';
 
     RETURN v_commit_hash;
 END;

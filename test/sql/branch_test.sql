@@ -29,21 +29,21 @@ SELECT lives_ok(
 );
 
 SELECT results_eq(
-    $$SELECT commit_hash FROM refs WHERE name = 'HEAD'$$,
-    $$SELECT commit_hash FROM refs WHERE name = 'test-branch'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'HEAD'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'test-branch'$$,
     'HEAD points to correct commit after checkout'
 );
 
 -- Test new branch with start point
 SELECT lives_ok(
     $$SELECT pg_git.create_branch(:repo_id, 'feature-branch', 
-        (SELECT commit_hash FROM refs WHERE name = 'master'))$$,
+        (SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'master'))$$,
     'Can create branch from specific commit'
 );
 
 SELECT results_eq(
-    $$SELECT commit_hash FROM refs WHERE name = 'feature-branch'$$,
-    $$SELECT commit_hash FROM refs WHERE name = 'master'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'feature-branch'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'master'$$,
     'Branch created at correct commit'
 );
 

@@ -115,8 +115,13 @@ pg_git/
            ├── commit_test.sql          # Commit tests
            ├── branch_test.sql          # Branch operation tests
            ├── merge_test.sql           # Merge operation tests
-           └── remote_test.sql          # Remote operation tests
- ``` 
+          └── remote_test.sql          # Remote operation tests
+```
+
+The `pg_git.control` file provides PostgreSQL with metadata about the
+extension and instructs it to load `sql/pg_git--0.4.0.sql` when the
+extension is created. Both the control file and the SQL script are
+installed by `make install`.
 
 ## Dependencies
 - PostgreSQL 12+
@@ -132,6 +137,8 @@ make && make install
 CREATE EXTENSION pgcrypto;
 CREATE EXTENSION pg_trgm;
 CREATE EXTENSION pg_git;
+# Alternatively, from the command line:
+# psql -d yourdb -c "CREATE EXTENSION pg_git;"
 ```
 
 ## Testing

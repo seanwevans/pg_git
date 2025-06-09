@@ -2,6 +2,7 @@
 -- Git plumbing commands implementation
 
 CREATE OR REPLACE FUNCTION pg_git.cat_file(
+    p_repo_id INTEGER,
     p_hash TEXT,
     p_type TEXT DEFAULT NULL
 ) RETURNS TABLE (
@@ -15,7 +16,7 @@ BEGIN
     SELECT 'blob'::TEXT,
            octet_length(content)::BIGINT,
            encode(content, 'escape')
-    FROM blobs WHERE hash = p_hash
+    FROM blobs WHERE repo_id = p_repo_id AND hash = p_hash
     AND (p_type IS NULL OR p_type = 'blob');
     
     IF FOUND THEN RETURN; END IF;
@@ -25,7 +26,7 @@ BEGIN
     SELECT 'tree'::TEXT,
            octet_length(entries::TEXT)::BIGINT,
            entries::TEXT
-    FROM trees WHERE hash = p_hash
+    FROM trees WHERE repo_id = p_repo_id AND hash = p_hash
     AND (p_type IS NULL OR p_type = 'tree');
     
     IF FOUND THEN RETURN; END IF;
@@ -35,21 +36,22 @@ BEGIN
     SELECT 'commit'::TEXT,
            octet_length(message)::BIGINT,
            message
-    FROM commits WHERE hash = p_hash
+    FROM commits WHERE repo_id = p_repo_id AND hash = p_hash
     AND (p_type IS NULL OR p_type = 'commit');
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION pg_git.hash_object(
+    p_repo_id INTEGER,
     p_content BYTEA,
     p_type TEXT DEFAULT 'blob'
 ) RETURNS TEXT AS $$
 BEGIN
     CASE p_type
         WHEN 'blob' THEN
-            RETURN pg_git.create_blob(p_content);
+            RETURN pg_git.create_blob(p_repo_id, p_content);
         WHEN 'tree' THEN
-            RETURN pg_git.create_tree(p_content::TEXT::jsonb);
+            RETURN pg_git.create_tree(p_repo_id, p_content::TEXT::jsonb);
         ELSE
             RAISE EXCEPTION 'Unsupported object type: %', p_type;
     END CASE;
@@ -57,6 +59,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION pg_git.ls_tree(
+    p_repo_id INTEGER,
     p_tree_hash TEXT,
     p_recursive BOOLEAN DEFAULT FALSE
 ) RETURNS TABLE (
@@ -72,9 +75,9 @@ BEGIN
                (e->>'type')::TEXT,
                (e->>'hash')::TEXT,
                (e->>'name')::TEXT
-        FROM trees,
-        jsonb_array_elements(entries) e
-        WHERE hash = p_tree_hash;
+        FROM trees t,
+             jsonb_array_elements(t.entries) e
+        WHERE t.repo_id = p_repo_id AND t.hash = p_tree_hash;
     ELSE
         RETURN QUERY
         WITH RECURSIVE tree_entries AS (
@@ -84,9 +87,10 @@ BEGIN
                    (e->>'hash')::TEXT as hash,
                    (e->>'name')::TEXT as path,
                    1 as level
-            FROM trees,
-            jsonb_array_elements(entries) e
-            WHERE hash = p_tree_hash
+            FROM trees t,
+                 jsonb_array_elements(t.entries) e
+            WHERE t.repo_id = p_repo_id AND t.hash = p_tree_hash
+            
             
             UNION ALL
             
@@ -97,7 +101,7 @@ BEGIN
                    te.path || '/' || (se->>'name')::TEXT,
                    te.level + 1
             FROM tree_entries te
-            JOIN trees t ON te.hash = t.hash,
+            JOIN trees t ON t.repo_id = p_repo_id AND te.hash = t.hash,
             jsonb_array_elements(t.entries) se
             WHERE te.type = 'tree'
         )
@@ -117,6 +121,7 @@ CREATE OR REPLACE FUNCTION pg_git.merge_base(
 $$ LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pg_git.rev_list(
+    p_repo_id INTEGER,
     p_start_commit TEXT,
     p_exclude_commits TEXT[] DEFAULT ARRAY[]::TEXT[]
 ) RETURNS TABLE (
@@ -136,7 +141,7 @@ BEGIN
                    'timestamp', timestamp
                ) as commit_data
         FROM commits
-        WHERE hash = p_start_commit
+        WHERE repo_id = p_repo_id AND hash = p_start_commit
         
         UNION
         
@@ -150,7 +155,7 @@ BEGIN
                    'timestamp', c.timestamp
                ) as commit_data
         FROM commit_list cl
-        JOIN commits c ON cl.commit_data->>'parent' = c.hash
+        JOIN commits c ON c.repo_id = p_repo_id AND cl.commit_data->>'parent' = c.hash
         WHERE c.hash <> ALL(p_exclude_commits)
     )
     SELECT * FROM commit_list;

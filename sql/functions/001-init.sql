@@ -20,10 +20,11 @@ BEGIN
     RETURNING id INTO v_repo_id;
     
     -- Create empty initial tree
-    v_initial_tree := create_tree('[]'::jsonb);
+    v_initial_tree := create_tree(v_repo_id, '[]'::jsonb);
     
     -- Create initial commit
     v_initial_commit := create_commit(
+        v_repo_id,
         v_initial_tree,
         NULL,
         'system',
@@ -31,10 +32,10 @@ BEGIN
     );
     
     -- Create master branch
-    PERFORM update_ref('master', v_initial_commit);
+    PERFORM update_ref(v_repo_id, 'master', v_initial_commit);
 
     -- Set HEAD to initial commit so subsequent commands work
-    PERFORM update_ref('HEAD', v_initial_commit);
+    PERFORM update_ref(v_repo_id, 'HEAD', v_initial_commit);
     
     RETURN v_repo_id;
 END;

@@ -19,16 +19,17 @@ BEGIN
     
     -- Create new commit with same tree
     v_new_commit := pg_git.create_commit(
+        p_repo_id,
         v_tree_hash,
-        (SELECT commit_hash FROM refs WHERE name = 'HEAD'),
+        (SELECT commit_hash FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD'),
         v_author,
         v_message || ' (cherry-picked from ' || p_commit_hash || ')'
     );
     
     -- Update HEAD
-    UPDATE refs 
+    UPDATE refs
     SET commit_hash = v_new_commit
-    WHERE name = 'HEAD';
+    WHERE repo_id = p_repo_id AND name = 'HEAD';
     
     RETURN v_new_commit;
 END;
@@ -48,26 +49,27 @@ DECLARE
 BEGIN
     -- Get trees and message
     SELECT tree_hash, message,
-           (SELECT tree_hash FROM commits WHERE hash = c.parent_hash)
+           (SELECT tree_hash FROM commits WHERE repo_id = p_repo_id AND hash = c.parent_hash)
     INTO v_commit_tree, v_message, v_parent_tree
-    FROM commits c 
-    WHERE hash = p_commit_hash;
+    FROM commits c
+    WHERE c.repo_id = p_repo_id AND hash = p_commit_hash;
     
     -- Create inverse diff
     v_new_tree := pg_git.apply_inverse_diff(v_parent_tree, v_commit_tree);
     
     -- Create revert commit
     v_new_commit := pg_git.create_commit(
+        p_repo_id,
         v_new_tree,
-        (SELECT commit_hash FROM refs WHERE name = 'HEAD'),
+        (SELECT commit_hash FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD'),
         current_user,
         'Revert "' || v_message || '"'
     );
     
     -- Update HEAD
-    UPDATE refs 
+    UPDATE refs
     SET commit_hash = v_new_commit
-    WHERE name = 'HEAD';
+    WHERE repo_id = p_repo_id AND name = 'HEAD';
     
     RETURN v_new_commit;
 END;
@@ -219,7 +221,7 @@ BEGIN
     -- Resolve commit
     IF p_commit = 'HEAD' THEN
         SELECT commit_hash INTO v_commit_hash
-        FROM refs WHERE name = 'HEAD';
+        FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD';
     ELSE
         v_commit_hash := p_commit;
     END IF;
@@ -228,10 +230,10 @@ BEGIN
     WITH files AS (
         SELECT e->>'name' as path, b.content
         FROM commits c
-        JOIN trees t ON c.tree_hash = t.hash,
+        JOIN trees t ON c.repo_id = p_repo_id AND t.repo_id = p_repo_id AND c.tree_hash = t.hash,
         jsonb_array_elements(t.entries) e
-        JOIN blobs b ON e->>'hash' = b.hash
-        WHERE c.hash = v_commit_hash
+        JOIN blobs b ON b.repo_id = p_repo_id AND e->>'hash' = b.hash
+        WHERE c.repo_id = p_repo_id AND c.hash = v_commit_hash
     )
     SELECT f.path,
            s.line_number,

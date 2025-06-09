@@ -18,19 +18,19 @@ BEGIN
     -- Get HEAD commit
     SELECT commit_hash INTO v_head_commit
     FROM refs
-    WHERE name = 'HEAD';
+    WHERE repo_id = p_repo_id AND name = 'HEAD';
 
     RETURN QUERY
     WITH RECURSIVE commit_log AS (
         SELECT c.*
         FROM commits c
-        WHERE hash = v_head_commit
+        WHERE c.repo_id = p_repo_id AND c.hash = v_head_commit
 
         UNION ALL
 
         SELECT c.*
         FROM commits c
-        INNER JOIN commit_log cl ON c.hash = cl.parent_hash
+        INNER JOIN commit_log cl ON c.repo_id = p_repo_id AND c.hash = cl.parent_hash
     )
     SELECT *
     FROM commit_log
@@ -55,7 +55,7 @@ BEGIN
                c.timestamp,
                array_agg(r.name) as ref_names
         FROM pg_git.get_log(p_repo_id, p_limit) c
-        LEFT JOIN refs r ON c.hash = r.commit_hash
+        LEFT JOIN refs r ON r.repo_id = p_repo_id AND c.hash = r.commit_hash
         GROUP BY c.hash, c.message, c.author, c.timestamp
     )
     SELECT 

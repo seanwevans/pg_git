@@ -37,14 +37,14 @@ SELECT lives_ok(
 
 -- Test HEAD after merge
 SELECT results_eq(
-    $$SELECT commit_hash FROM refs WHERE name = 'HEAD'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'HEAD'$$,
     $$SELECT :feature_commit$$,
     'HEAD points to correct commit after merge'
 );
 
 -- Test branch pointer after merge
 SELECT results_eq(
-    $$SELECT commit_hash FROM refs WHERE name = 'master'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'master'$$,
     $$SELECT :feature_commit$$,
     'Branch points to correct commit after merge'
 );

@@ -2,6 +2,7 @@
 CREATE SCHEMA IF NOT EXISTS pg_git;
 \ir schema/001-core.sql
 \ir schema/pgit-schema.sql
+
 \ir functions/001-init.sql
 \ir functions/002-add.sql
 \ir functions/003-commit.sql
@@ -13,10 +14,12 @@ CREATE SCHEMA IF NOT EXISTS pg_git;
 \ir functions/009-reset.sql
 \ir functions/010-tag.sql
 \ir functions/011-remote.sql
+
 \ir functions/012-migrations.sql
 \ir functions/013-merge-conflicts.sql
 \ir functions/014-https.sql
 \ir functions/015-admin.sql
+
 \i pgit-archive.sql
 \i pgit-advanced-commands.sql
 \i pgit-bundle.sql

@@ -7,9 +7,9 @@ CREATE OR REPLACE FUNCTION pg_git.reset_soft(
 ) RETURNS VOID AS $$
 BEGIN
     -- Move HEAD to specified commit
-    UPDATE refs 
+    UPDATE refs
     SET commit_hash = p_commit
-    WHERE name = 'HEAD';
+    WHERE repo_id = p_repo_id AND name = 'HEAD';
 END;
 $$ LANGUAGE plpgsql;
 
@@ -35,13 +35,13 @@ DECLARE
 BEGIN
     -- Get tree from commit
     SELECT tree_hash INTO v_tree_hash
-    FROM commits WHERE hash = p_commit;
+    FROM commits WHERE repo_id = p_repo_id AND hash = p_commit;
     
     -- Get blob hash from tree
     SELECT (e->>'hash')::TEXT INTO v_blob_hash
     FROM trees t,
     jsonb_array_elements(t.entries) e
-    WHERE t.hash = v_tree_hash
+    WHERE t.repo_id = p_repo_id AND t.hash = v_tree_hash
     AND e->>'name' = p_path;
     
     IF v_blob_hash IS NULL THEN
