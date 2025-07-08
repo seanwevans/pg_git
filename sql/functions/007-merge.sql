@@ -86,5 +86,4 @@ BEGIN
     
     -- For now, only support fast-forward merges
     RAISE EXCEPTION 'Only fast-forward merges are currently supported';
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

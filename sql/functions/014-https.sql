@@ -50,5 +50,4 @@ BEGIN
     RAISE NOTICE 'Would fetch % with credentials for %', p_url, v_host;
     
     RETURN v_response;
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

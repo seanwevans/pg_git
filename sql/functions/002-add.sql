@@ -31,5 +31,4 @@ CREATE OR REPLACE FUNCTION unstage_file(
 BEGIN
     DELETE FROM index_entries 
     WHERE repo_id = p_repo_id AND path = p_path;
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

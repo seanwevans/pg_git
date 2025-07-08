@@ -55,5 +55,4 @@ BEGIN
     LEFT JOIN base_files b ON f.path = b.path
     WHERE (o.blob_hash != t.blob_hash OR o.blob_hash IS NULL OR t.blob_hash IS NULL)
     AND NOT pg_git.can_auto_merge(o.blob_hash, t.blob_hash, b.blob_hash);
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

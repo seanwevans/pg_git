@@ -95,5 +95,4 @@ BEGIN
                 ARRAY[]::TEXT[]
         END as diff_content
     FROM pg_git.diff_trees(v_old_tree, v_new_tree) d;
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

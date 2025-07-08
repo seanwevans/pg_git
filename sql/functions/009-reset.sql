@@ -55,5 +55,4 @@ BEGIN
         ON CONFLICT (repo_id, path) 
         DO UPDATE SET blob_hash = v_blob_hash;
     END IF;
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

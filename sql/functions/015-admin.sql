@@ -119,5 +119,4 @@ BEGIN
     LOOP
         EXECUTE format('REINDEX INDEX %I', index_name);
     END LOOP;
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;
