@@ -51,5 +51,4 @@ test/log/
 core
 *.core
 vgcore.*
-tags
-TAGS
+tagsTAGS
