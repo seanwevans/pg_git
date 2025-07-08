@@ -27,8 +27,8 @@
     },
     "resources": {
         "repository": {
-            "url": "https://github.com/yourusername/pg_git.git",
-            "web": "https://github.com/yourusername/pg_git",
+            "url": "https://github.com/seanwevans/pg_git.git",
+            "web": "https://github.com/seanwevans/pg_git",
             "type": "git"
         }
     },
