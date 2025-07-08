@@ -21,14 +21,15 @@
                 "PostgreSQL": "12.0.0",
                 "plpgsql": 0,
                 "pgcrypto": 0,
-                "pg_trgm": 0
+                "pg_trgm": 0,
+                "plpython3u": 0
             }
         }
     },
     "resources": {
         "repository": {
-            "url": "https://github.com/yourusername/pg_git.git",
-            "web": "https://github.com/yourusername/pg_git",
+            "url": "https://github.com/seanwevans/pg_git.git",
+            "web": "https://github.com/seanwevans/pg_git",
             "type": "git"
         }
     },
@@ -44,3 +45,4 @@
         "repository"
     ]
 }
+
