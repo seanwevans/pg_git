@@ -31,7 +31,7 @@ A PostgreSQL-native Git implementation.
 - Instaweb interface
 - Pack and repack support
 - Object replacement
-- Remote operations with HTTPS transport
+ - Remote operations with HTTPS transport (uses `plpython3u`)
 - Stash management
 - Worktree support
 - Bisect debugging
@@ -187,7 +187,11 @@ SELECT pg_git.create_branch(1, 'feature');
 SELECT pg_git.merge_branches(1, 'feature', 'main');
 
 -- Remote operations with HTTPS
+-- Set encryption key for storing credentials
+ALTER SYSTEM SET pg_git.credential_key = 'my_secret';
+SELECT pg_reload_conf();
 SELECT pg_git.store_credentials(1, 'github.com', 'username', 'token');
+-- `http_fetch` uses Python to perform the actual HTTPS request
 
 -- Garbage collection
 SELECT pg_git.gc(1, aggressive := true);
@@ -226,3 +230,4 @@ Current: 0.4.0
 
 ## License
 See [LICENSE](LICENSE) for the full text of the PostgreSQL License.
+
