@@ -21,5 +21,4 @@ BEGIN
         EXECUTE p_up;
         INSERT INTO pg_git.schema_migrations (version) VALUES (p_version);
     END IF;
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

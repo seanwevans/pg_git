@@ -60,4 +60,3 @@ with urllib.request.urlopen(req) as resp:
 
 return data
 $$ LANGUAGE plpython3u;
-

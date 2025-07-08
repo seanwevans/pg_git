@@ -72,5 +72,4 @@ BEGIN
         ref_names
     FROM commit_refs
     ORDER BY timestamp DESC;
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

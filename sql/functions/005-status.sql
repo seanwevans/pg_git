@@ -62,5 +62,4 @@ BEGIN
         E'\n',
         COALESCE(v_output, '  (no changes)')
     );
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

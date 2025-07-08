@@ -46,5 +46,4 @@ CREATE OR REPLACE FUNCTION pg_git.list_tags(
     SELECT name, target_hash, tagger, message, created_at
     FROM pg_git.tags
     WHERE repo_id = p_repo_id
-    ORDER BY created_at DESC;
-$$ LANGUAGE sql;
+    ORDER BY created_at DESC;$$ LANGUAGE sql;

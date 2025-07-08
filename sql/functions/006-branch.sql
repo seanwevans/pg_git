@@ -68,5 +68,4 @@ BEGIN
     WHERE repo_id = p_repo_id AND name = 'HEAD';
 
     RETURN v_commit_hash;
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;

@@ -120,5 +120,4 @@ BEGIN
     PERFORM pg_git.checkout_branch(v_repo_id, 'main', TRUE);
     
     RETURN v_repo_id;
-END;
-$$ LANGUAGE plpgsql;
+END;$$ LANGUAGE plpgsql;
