@@ -16,8 +16,9 @@ TESTS := \
        test/sql/commit_test.sql \
        test/sql/merge_test.sql \
        test/sql/remote_test.sql \
-       test/sql/advanced_test.sql
-REGRESS = init add_test branch_test commit_test merge_test remote_test advanced_test
+       test/sql/advanced_test.sql \
+       test/sql/diff_test.sql
+REGRESS = init add_test branch_test commit_test merge_test remote_test advanced_test diff_test
 REGRESS_OPTS = --inputdir=test
 
 include $(PGXS)

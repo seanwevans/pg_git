@@ -33,32 +33,33 @@ CREATE OR REPLACE FUNCTION pg_git.diff_text(
     line_content TEXT
 ) AS $$
 BEGIN
-    -- Split texts into arrays
+    -- Split texts into arrays with line numbers using ordinality
     WITH old_lines AS (
-        SELECT unnest(string_to_array(p_old_text, E'\n')) as line,
-               generate_subscripts(string_to_array(p_old_text, E'\n'), 1) as line_num
+        SELECT line, line_num
+        FROM unnest(string_to_array(p_old_text, E'\n')) WITH ORDINALITY AS t(line, line_num)
     ),
     new_lines AS (
-        SELECT unnest(string_to_array(p_new_text, E'\n')) as line,
-               generate_subscripts(string_to_array(p_new_text, E'\n'), 1) as line_num
+        SELECT line, line_num
+        FROM unnest(string_to_array(p_new_text, E'\n')) WITH ORDINALITY AS t(line, line_num)
     )
-    -- Simple line-by-line diff
-    SELECT '-' as line_type, old_lines.line as line_content
-    FROM old_lines
-    WHERE NOT EXISTS (
-        SELECT 1 FROM new_lines WHERE new_lines.line = old_lines.line
-    )
-    UNION ALL
-    SELECT '+' as line_type, new_lines.line as line_content
-    FROM new_lines
-    WHERE NOT EXISTS (
-        SELECT 1 FROM old_lines WHERE old_lines.line = new_lines.line
-    )
-    UNION ALL
-    SELECT ' ' as line_type, old_lines.line as line_content
-    FROM old_lines
-    JOIN new_lines ON old_lines.line = new_lines.line
-    ORDER BY line_content;
+    -- Simple line-by-line diff preserving line order
+    SELECT line_type, line_content
+    FROM (
+        SELECT line_num, '-' AS line_type, old_lines.line AS line_content
+        FROM old_lines
+        LEFT JOIN new_lines USING (line_num, line)
+        WHERE new_lines.line IS NULL
+        UNION ALL
+        SELECT line_num, '+' AS line_type, new_lines.line AS line_content
+        FROM new_lines
+        LEFT JOIN old_lines USING (line_num, line)
+        WHERE old_lines.line IS NULL
+        UNION ALL
+        SELECT line_num, ' ' AS line_type, old_lines.line AS line_content
+        FROM old_lines
+        JOIN new_lines USING (line_num, line)
+    ) d
+    ORDER BY line_num, CASE line_type WHEN '-' THEN 1 WHEN '+' THEN 2 ELSE 3 END;
 END;
 $$ LANGUAGE plpgsql;
 
