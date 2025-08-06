@@ -34,8 +34,7 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION pg_git.http_fetch(
     p_repo_id INTEGER,
-    p_url TEXT,
-    p_ref TEXT
+    p_url TEXT
 ) RETURNS BYTEA AS $$import base64
 from urllib.parse import urlparse
 import urllib.request
@@ -47,8 +46,11 @@ cred = plpy.execute(
     [key, p_repo_id, host]
 )
 
-username = cred[0]['username'] if cred else None
-password = cred[0]['pw'] if cred else None
+username = None
+password = None
+if len(cred) > 0:
+    username = cred[0]['username']
+    password = cred[0]['pw']
 
 req = urllib.request.Request(p_url)
 if username:
