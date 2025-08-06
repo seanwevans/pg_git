@@ -3,7 +3,7 @@
 
 BEGIN;
 
-SELECT plan(8);
+SELECT plan(9);
 
 -- Setup test repository and staged file
 SELECT pg_git.init_repository('test_repo', '/test/path') AS repo_id \gset
@@ -25,6 +25,12 @@ SELECT results_eq(
     $$SELECT author FROM commits WHERE repo_id = :repo_id ORDER BY timestamp DESC LIMIT 1$$,
     $$VALUES ('test_author')$$,
     'Commit author stored correctly'
+);
+
+SELECT results_eq(
+    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'master'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'HEAD'$$,
+    'Branch reference moves to new commit'
 );
 
 -- Test commit tree content
