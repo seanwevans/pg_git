@@ -2,8 +2,7 @@
 -- pg_git admin functions
 
 CREATE OR REPLACE FUNCTION pg_git.gc(
-    p_repo_id INTEGER,
-    p_aggressive BOOLEAN DEFAULT FALSE
+    p_repo_id INTEGER
 ) RETURNS TABLE (
     object_type TEXT,
     objects_removed INTEGER,
@@ -13,43 +12,60 @@ DECLARE
     v_reachable_objects TEXT[];
 BEGIN
     -- Collect all reachable objects
-    WITH RECURSIVE reachable AS (
+    WITH RECURSIVE reachable(object_type, hash) AS (
         -- Start from refs
-        SELECT commit_hash as hash FROM refs WHERE repo_id = p_repo_id
+        SELECT 'commit', commit_hash FROM refs WHERE repo_id = p_repo_id
         UNION
-        -- Get commit objects
-        SELECT hash FROM commits
-        WHERE repo_id = p_repo_id AND hash = ANY(v_reachable_objects)
+        -- Walk parent commits
+        SELECT 'commit', c.parent_hash
+        FROM commits c
+        JOIN reachable r
+          ON r.object_type = 'commit' AND c.repo_id = p_repo_id AND c.hash = r.hash
+        WHERE c.parent_hash IS NOT NULL
         UNION
-        -- Get tree objects
-        SELECT hash FROM trees
-        WHERE repo_id = p_repo_id AND hash = ANY(v_reachable_objects)
+        -- Commits reference trees
+        SELECT 'tree', c.tree_hash
+        FROM commits c
+        JOIN reachable r
+          ON r.object_type = 'commit' AND c.repo_id = p_repo_id AND c.hash = r.hash
         UNION
-        -- Get blob objects
-        SELECT hash FROM blobs
-        WHERE repo_id = p_repo_id AND hash = ANY(v_reachable_objects)
+        -- Trees reference blobs and subtrees
+        SELECT (e->>'type')::TEXT, e->>'hash'
+        FROM trees t
+        JOIN reachable r
+          ON r.object_type = 'tree' AND t.repo_id = p_repo_id AND t.hash = r.hash
+        CROSS JOIN LATERAL jsonb_array_elements(t.entries) AS e
     )
-    SELECT array_agg(hash) INTO v_reachable_objects FROM reachable;
+    SELECT array_agg(DISTINCT hash) INTO v_reachable_objects FROM reachable;
+
+    v_reachable_objects := COALESCE(v_reachable_objects, ARRAY[]::TEXT[]);
 
     -- Remove unreachable objects
     RETURN QUERY
+    WITH deleted_blobs AS (
+        DELETE FROM blobs
+        WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
+        RETURNING octet_length(content) AS size
+    ), deleted_trees AS (
+        DELETE FROM trees
+        WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
+        RETURNING octet_length(entries::TEXT) AS size
+    ), deleted_commits AS (
+        DELETE FROM commits
+        WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
+        RETURNING octet_length(message) AS size
+    )
     SELECT 'blobs'::TEXT,
            count(*)::INTEGER,
-           sum(octet_length(content))::BIGINT
-    FROM blobs
-    WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
+           COALESCE(sum(size),0)::BIGINT FROM deleted_blobs
     UNION ALL
     SELECT 'trees'::TEXT,
            count(*)::INTEGER,
-           sum(octet_length(entries::TEXT))::BIGINT
-    FROM trees
-    WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
+           COALESCE(sum(size),0)::BIGINT FROM deleted_trees
     UNION ALL
     SELECT 'commits'::TEXT,
            count(*)::INTEGER,
-           sum(octet_length(message))::BIGINT
-    FROM commits
-    WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects);
+           COALESCE(sum(size),0)::BIGINT FROM deleted_commits;
 END;
 $$ LANGUAGE plpgsql;
 

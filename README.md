@@ -133,7 +133,7 @@ SELECT pg_git.store_credentials(1, 'github.com', 'username', 'token');
 -- `http_fetch` uses Python to perform the actual HTTPS request
 
 -- Garbage collection
-SELECT pg_git.gc(1, aggressive := true);
+SELECT pg_git.gc(1);
 
 -- Integrity verification
 SELECT pg_git.verify_integrity(1);
