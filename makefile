@@ -19,6 +19,7 @@ TESTS := \
        test/sql/https_fetch_test.sql \
        test/sql/advanced_test.sql
 REGRESS = init add_test branch_test commit_test merge_test remote_test https_fetch_test advanced_test
+
 REGRESS_OPTS = --inputdir=test
 
 include $(PGXS)

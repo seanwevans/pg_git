@@ -49,8 +49,13 @@ BEGIN
         p_message
     );
 
-    -- Update HEAD and current branch
+    -- Update HEAD and branch reference
     UPDATE refs SET commit_hash = v_commit_hash WHERE repo_id = p_repo_id AND name = 'HEAD';
+    UPDATE refs
+    SET commit_hash = v_commit_hash
+    WHERE repo_id = p_repo_id
+      AND commit_hash = v_parent_hash
+      AND name <> 'HEAD';
 
     -- Clear index
     DELETE FROM index_entries WHERE repo_id = p_repo_id;
