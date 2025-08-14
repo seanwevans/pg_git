@@ -8,10 +8,13 @@ CREATE OR REPLACE FUNCTION pg_git.gc(
     objects_removed INTEGER,
     space_reclaimed BIGINT
 ) AS $$
-DECLARE
-    v_reachable_objects TEXT[];
 BEGIN
-    -- Collect all reachable objects
+    -- Ensure temporary table does not exist from prior runs
+    DROP TABLE IF EXISTS tmp_reachable_objects;
+
+    -- Collect all reachable objects into a temporary table
+    CREATE TEMP TABLE tmp_reachable_objects(hash TEXT PRIMARY KEY) ON COMMIT DROP;
+
     WITH RECURSIVE reachable(object_type, hash) AS (
         -- Start from refs
         SELECT 'commit', commit_hash FROM refs WHERE repo_id = p_repo_id
@@ -36,23 +39,28 @@ BEGIN
           ON r.object_type = 'tree' AND t.repo_id = p_repo_id AND t.hash = r.hash
         CROSS JOIN LATERAL jsonb_array_elements(t.entries) AS e
     )
-    SELECT array_agg(DISTINCT hash) INTO v_reachable_objects FROM reachable;
-
-    v_reachable_objects := COALESCE(v_reachable_objects, ARRAY[]::TEXT[]);
+    INSERT INTO tmp_reachable_objects
+    SELECT DISTINCT hash FROM reachable;
 
     -- Remove unreachable objects
     RETURN QUERY
     WITH deleted_blobs AS (
-        DELETE FROM blobs
-        WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
+        DELETE FROM blobs b
+        WHERE b.repo_id = p_repo_id AND NOT EXISTS (
+            SELECT 1 FROM tmp_reachable_objects r WHERE r.hash = b.hash
+        )
         RETURNING octet_length(content) AS size
     ), deleted_trees AS (
-        DELETE FROM trees
-        WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
+        DELETE FROM trees t
+        WHERE t.repo_id = p_repo_id AND NOT EXISTS (
+            SELECT 1 FROM tmp_reachable_objects r WHERE r.hash = t.hash
+        )
         RETURNING octet_length(entries::TEXT) AS size
     ), deleted_commits AS (
-        DELETE FROM commits
-        WHERE repo_id = p_repo_id AND hash <> ALL(v_reachable_objects)
+        DELETE FROM commits c
+        WHERE c.repo_id = p_repo_id AND NOT EXISTS (
+            SELECT 1 FROM tmp_reachable_objects r WHERE r.hash = c.hash
+        )
         RETURNING octet_length(message) AS size
     )
     SELECT 'blobs'::TEXT,
@@ -66,6 +74,9 @@ BEGIN
     SELECT 'commits'::TEXT,
            count(*)::INTEGER,
            COALESCE(sum(size),0)::BIGINT FROM deleted_commits;
+
+    -- Explicitly drop temporary table
+    DROP TABLE IF EXISTS tmp_reachable_objects;
 END;
 $$ LANGUAGE plpgsql;
 
