@@ -123,27 +123,39 @@ CREATE OR REPLACE FUNCTION pg_git.optimize_indexes(
 ) RETURNS TABLE (
     table_name TEXT,
     index_name TEXT,
-    operation TEXT
+    operation TEXT,
+    success BOOLEAN
 ) AS $$
 BEGIN
-    RETURN QUERY
-    SELECT t.tablename::TEXT,
-           i.indexname::TEXT,
-           'REINDEX'::TEXT
-    FROM pg_tables t
-    JOIN pg_indexes i ON i.tablename = t.tablename
-    WHERE t.schemaname = 'pg_git'
-    ORDER BY t.tablename, i.indexname;
-    
-    -- Actually perform the reindex
-    FOR table_name, index_name, operation IN
+    -- Temporary table to collect reindex results
+    CREATE TEMP TABLE IF NOT EXISTS optimize_index_results (
+        table_name TEXT,
+        index_name TEXT,
+        operation TEXT,
+        success BOOLEAN
+    ) ON COMMIT DROP;
+    TRUNCATE optimize_index_results;
+
+    -- Perform reindex operations, logging successes and failures
+    FOR table_name, index_name IN
         SELECT t.tablename::TEXT,
-               i.indexname::TEXT,
-               'REINDEX'::TEXT
+               i.indexname::TEXT
         FROM pg_tables t
         JOIN pg_indexes i ON i.tablename = t.tablename
         WHERE t.schemaname = 'pg_git'
     LOOP
-        EXECUTE format('REINDEX INDEX %I', index_name);
+        BEGIN
+            EXECUTE format('REINDEX INDEX %I', index_name);
+            INSERT INTO optimize_index_results VALUES (table_name, index_name, 'REINDEX', TRUE);
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'Reindex failed for %: %', index_name, SQLERRM;
+            INSERT INTO optimize_index_results VALUES (table_name, index_name, 'REINDEX', FALSE);
+        END;
     END LOOP;
+
+    -- Return results to caller
+    RETURN QUERY
+    SELECT table_name, index_name, operation, success
+    FROM optimize_index_results
+    ORDER BY table_name, index_name;
 END;$$ LANGUAGE plpgsql;

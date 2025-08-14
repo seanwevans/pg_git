@@ -18,9 +18,11 @@ TESTS := \
        test/sql/remote_test.sql \
        test/sql/advanced_test.sql \
        test/sql/gc_test.sql \
-       test/sql/gc_performance_test.sql \
-       test/sql/https_fetch_test.sql
-REGRESS = init add_test branch_test commit_test merge_test remote_test advanced_test gc_test gc_performance_test https_fetch_test
+       test/sql/https_fetch_test.sql \
+       test/sql/optimize_indexes_test.sql \
+       test/sql/gc_performance_test.sql       
+
+REGRESS = init add_test branch_test commit_test merge_test remote_test advanced_test gc_test gc_performance_test https_fetch_test optimize_indexes_test
 
 REGRESS_OPTS = --inputdir=test
 
