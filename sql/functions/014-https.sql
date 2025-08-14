@@ -36,8 +36,10 @@ CREATE OR REPLACE FUNCTION pg_git.http_fetch(
     p_repo_id INTEGER,
     p_url TEXT
 ) RETURNS BYTEA AS $$import base64
+import ssl
 from urllib.parse import urlparse
 import urllib.request
+import urllib.error
 
 host = urlparse(p_url).hostname
 key = plpy.execute("SELECT current_setting('pg_git.credential_key', true) AS k")[0]['k'] or 'pg_git_default_key'
@@ -45,6 +47,8 @@ cred = plpy.execute(
     "SELECT username, pgp_sym_decrypt(password, $1) AS pw FROM pg_git.credentials WHERE repo_id = $2 AND host = $3",
     [key, p_repo_id, host]
 )
+
+context = ssl.create_default_context()
 
 username = None
 password = None
@@ -57,8 +61,13 @@ if username:
     token = f"{username}:{password}".encode('utf-8')
     req.add_header('Authorization', 'Basic ' + base64.b64encode(token).decode('ascii'))
 
-with urllib.request.urlopen(req) as resp:
-    data = resp.read()
+try:
+    with urllib.request.urlopen(req, context=context, timeout=10) as resp:
+        data = resp.read()
+except urllib.error.HTTPError as e:
+    raise plpy.Error(f"Failed to fetch {p_url}: HTTP {e.code} {e.reason}")
+except urllib.error.URLError as e:
+    raise plpy.Error(f"Failed to fetch {p_url}: {e.reason}")
 
 return data
 $$ LANGUAGE plpython3u;
