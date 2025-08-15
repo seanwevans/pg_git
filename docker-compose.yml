@@ -11,17 +11,23 @@ services:
     volumes:
       - .:/pg_git
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   test:
     build: .
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       PGHOST: db
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: pg_git_dev
-    command: make test
+    command: ["./wait-for-db.sh", "make", "test"]
 
 volumes:
   pg_data:
