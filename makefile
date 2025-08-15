@@ -20,9 +20,11 @@ TESTS := \
        test/sql/gc_test.sql \
        test/sql/https_fetch_test.sql \
        test/sql/optimize_indexes_test.sql \
-       test/sql/gc_performance_test.sql       
+       test/sql/gc_performance_test.sql
 
-REGRESS = init add_test branch_test commit_test merge_test remote_test advanced_test gc_test gc_performance_test https_fetch_test optimize_indexes_test
+# Ensure a corresponding REGRESS target exists for every SQL test file.
+# Derive the target names from the TESTS list to keep them in sync.
+REGRESS := $(notdir $(basename $(TESTS)))
 
 REGRESS_OPTS = --inputdir=test
 
