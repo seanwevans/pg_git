@@ -1,6 +1,8 @@
 -- Path: /test/sql/init.sql
 -- pg_git initialization tests
 
+CREATE EXTENSION IF NOT EXISTS pgtap;
+
 BEGIN;
 
 SELECT plan(12);
