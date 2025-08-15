@@ -22,10 +22,10 @@ TESTS := \
        test/sql/optimize_indexes_test.sql \
        test/sql/gc_performance_test.sql
 
-# Ensure a corresponding REGRESS target exists for every SQL test file.
+
+
 # Derive the target names from the TESTS list to keep them in sync.
 REGRESS := $(notdir $(basename $(TESTS)))
-
 REGRESS_OPTS = --inputdir=test
 
 include $(PGXS)
