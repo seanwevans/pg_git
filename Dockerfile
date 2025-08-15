@@ -4,6 +4,8 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     postgresql-server-dev-all \
     git \
+    postgresql-${PG_MAJOR}-pgtap \
+    libtap-parser-sourcehandler-pgtap-perl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /pg_git
