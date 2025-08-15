@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     postgresql-server-dev-all \
     git \
-    postgresql-${PG_MAJOR}-pgtap \
+    postgresql-15-pgtap \
     postgresql-${PG_MAJOR}-plpython3 \
     libtap-parser-sourcehandler-pgtap-perl \
     && rm -rf /var/lib/apt/lists/*
