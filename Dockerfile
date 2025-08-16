@@ -2,7 +2,7 @@ FROM postgres:14
 
 RUN apt-get update && apt-get install -y \
     build-essential \
-    postgresql-server-dev-all \
+    postgresql-server-dev-14 \
     git \
     postgresql-14-pgtap \
     postgresql-plpython3-14 \
@@ -13,4 +13,5 @@ WORKDIR /pg_git
 
 COPY . .
 
-RUN make && make install
+RUN make PG_CONFIG=/usr/lib/postgresql/14/bin/pg_config && \
+    make PG_CONFIG=/usr/lib/postgresql/14/bin/pg_config install
