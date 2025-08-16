@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Build and install extension
+        run: |
+          make
+          sudo make install
       - name: Run tests
         run: |
           docker compose up --abort-on-container-exit --exit-code-from test test
