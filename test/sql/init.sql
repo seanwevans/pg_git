@@ -2,6 +2,7 @@
 -- pg_git initialization tests
 
 CREATE EXTENSION IF NOT EXISTS pgtap;
+CREATE EXTENSION IF NOT EXISTS pg_git;
 
 BEGIN;
 
