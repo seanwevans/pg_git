@@ -66,7 +66,11 @@ CREATE OR REPLACE FUNCTION unstage_file(
     p_repo_id INTEGER,
     p_path TEXT
 ) RETURNS VOID AS $$
+DECLARE
+    v_norm_path TEXT;
 BEGIN
-    DELETE FROM index_entries 
-    WHERE repo_id = p_repo_id AND path = p_path;
+    v_norm_path := normalize_path(p_path);
+
+    DELETE FROM index_entries
+    WHERE repo_id = p_repo_id AND path = v_norm_path;
 END;$$ LANGUAGE plpgsql;
