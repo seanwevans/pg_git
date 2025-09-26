@@ -78,8 +78,18 @@ DECLARE
     v_hash TEXT;
     v_commit_data TEXT;
 BEGIN
-    v_commit_data := p_tree_hash || p_parent_hash || p_author || p_message;
+    v_commit_data := concat_ws(
+        '',
+        COALESCE(p_tree_hash, ''),
+        COALESCE(p_parent_hash, ''),
+        COALESCE(p_author, ''),
+        COALESCE(p_message, '')
+    );
     v_hash := encode(sha256(v_commit_data::bytea), 'hex');
+
+    IF v_hash IS NULL THEN
+        RAISE EXCEPTION 'Commit hash calculation returned NULL';
+    END IF;
 
     INSERT INTO commits (repo_id, hash, tree_hash, parent_hash, author, message)
     VALUES (p_repo_id, v_hash, p_tree_hash, p_parent_hash, p_author, p_message);
