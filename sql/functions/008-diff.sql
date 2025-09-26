@@ -72,18 +72,24 @@ CREATE OR REPLACE FUNCTION pg_git.diff_commits(
     diff_content TEXT[]
 ) AS $$
 DECLARE
+    v_repo_id INTEGER;
     v_old_tree TEXT;
     v_new_tree TEXT;
 BEGIN
     -- Get tree hashes
-    SELECT tree_hash INTO v_old_tree
+    SELECT repo_id, tree_hash INTO v_repo_id, v_old_tree
     FROM commits WHERE hash = p_old_commit;
-    
+
+    IF v_repo_id IS NULL THEN
+        SELECT repo_id INTO v_repo_id
+        FROM commits WHERE hash = p_new_commit;
+    END IF;
+
     SELECT tree_hash INTO v_new_tree
-    FROM commits WHERE hash = p_new_commit;
-    
+    FROM commits WHERE hash = p_new_commit AND repo_id = v_repo_id;
+
     RETURN QUERY
-    SELECT 
+    SELECT
         d.path,
         d.change_type,
         CASE 
@@ -95,5 +101,5 @@ BEGIN
             ELSE
                 ARRAY[]::TEXT[]
         END as diff_content
-    FROM pg_git.diff_trees(v_old_tree, v_new_tree) d;
+    FROM pg_git.diff_trees(v_repo_id, v_old_tree, v_new_tree) d;
 END;$$ LANGUAGE plpgsql;

@@ -34,20 +34,22 @@ BEGIN
     RETURN QUERY
     WITH RECURSIVE commit_history AS (
         -- Start from until commit
-        SELECT hash, parent_hash, author, timestamp, message, tree_hash
+        SELECT repo_id, hash, parent_hash, author, timestamp, message, tree_hash
         FROM commits
-        WHERE hash = v_until_hash
-        
+        WHERE repo_id = p_repo_id
+          AND hash = v_until_hash
+
         UNION ALL
-        
+
         -- Walk back through parents
-        SELECT c.hash, c.parent_hash, c.author, c.timestamp, c.message, c.tree_hash
+        SELECT c.repo_id, c.hash, c.parent_hash, c.author, c.timestamp, c.message, c.tree_hash
         FROM commits c
         JOIN commit_history ch ON c.hash = ch.parent_hash
-        WHERE (p_since IS NULL OR c.hash != p_since)
+        WHERE c.repo_id = p_repo_id
+          AND (p_since IS NULL OR c.hash != p_since)
     ),
     file_changes AS (
-        SELECT 
+        SELECT
             ch.hash as commit_hash,
             ch.author,
             ch.timestamp,
@@ -59,9 +61,15 @@ BEGIN
             dt.old_hash,
             dt.new_hash
         FROM commit_history ch
+        LEFT JOIN LATERAL (
+            SELECT repo_id, tree_hash
+            FROM commits
+            WHERE hash = ch.parent_hash
+              AND repo_id = ch.repo_id
+        ) parent ON TRUE
         CROSS JOIN LATERAL (
             SELECT d.path,
-                   CASE 
+                   CASE
                        WHEN d.old_hash IS NULL THEN 'A'  -- Added
                        WHEN d.new_hash IS NULL THEN 'D'  -- Deleted
                        ELSE 'M'                          -- Modified
@@ -71,13 +79,11 @@ BEGIN
                    d.old_hash,
                    d.new_hash
             FROM pg_git.diff_trees(
-                (SELECT tree_hash FROM commits WHERE hash = ch.parent_hash),
+                COALESCE(parent.repo_id, ch.repo_id),
+                parent.tree_hash,
                 ch.tree_hash
             ) d
-            LEFT JOIN pg_git.get_tree_entry(
-                (SELECT tree_hash FROM commits WHERE hash = ch.parent_hash),
-                d.path
-            ) t1 ON TRUE
+            LEFT JOIN pg_git.get_tree_entry(parent.tree_hash, d.path) t1 ON TRUE
             LEFT JOIN pg_git.get_tree_entry(ch.tree_hash, d.path) t2 ON TRUE
             WHERE p_paths IS NULL OR d.path = ANY(p_paths)
         ) dt
