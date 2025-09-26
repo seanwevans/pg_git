@@ -15,8 +15,12 @@ BEGIN
             'name', path
         )
     ) INTO v_entries
-    FROM index_entries
-    WHERE repo_id = p_repo_id;
+    FROM (
+        SELECT mode, blob_hash, path
+        FROM index_entries
+        WHERE repo_id = p_repo_id
+        ORDER BY path
+    ) ordered_entries;
 
     RETURN pg_git.create_tree(p_repo_id, COALESCE(v_entries, '[]'::jsonb));
 END;
