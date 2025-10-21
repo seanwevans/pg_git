@@ -1,4 +1,5 @@
 # pg_git
+<img width="256" alt="pg_git" src="https://github.com/user-attachments/assets/ac2cde34-f51e-4f19-8c4b-28383ffedf30" />
 
 A PostgreSQL-native Git implementation.
 
