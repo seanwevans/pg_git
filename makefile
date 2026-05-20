@@ -9,11 +9,13 @@ DATA = sql/$(EXTENSION)--$(EXTVERSION).sql \
        $(wildcard sql/schema/*.sql) \
        $(wildcard sql/functions/*.sql)
 
+# Register new SQL tests here in execution order (add matching test/sql/*.sql files to this list).
 TESTS := \
        test/sql/init.sql \
        test/sql/add_test.sql \
        test/sql/branch_test.sql \
        test/sql/commit_test.sql \
+       test/sql/diff_test.sql \
        test/sql/merge_test.sql \
        test/sql/remote_test.sql \
        test/sql/advanced_test.sql \
@@ -33,4 +35,3 @@ include $(PGXS)
 .PHONY: test
 test:
 	pg_prove -d postgres $(TESTS)
-
