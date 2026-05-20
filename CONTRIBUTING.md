@@ -13,9 +13,10 @@ Before cutting a release, complete all of the following:
 
 When adding or changing functionality, ensure tests are updated:
 
-1. **Add a new test file to `test/sql/`** and include it in the `TESTS` list in `makefile`.
-2. **Follow naming conventions** for test files: use lowercase snake case and the `_test.sql` suffix (for example, `new_feature_test.sql`).
-3. **Validate expected target behavior** with assertions that cover:
+1. **Add a new test file to `test/sql/`** using lowercase snake case and the `_test.sql` suffix (for example, `new_feature_test.sql`).
+2. **Add the new test path to `test/sql/manifest.txt`** in the correct execution position. This manifest is the authoritative test order for `make test`.
+3. **Run `make check-test-manifest`** to confirm all `test/sql/*_test.sql` files are listed in the manifest.
+4. **Validate expected target behavior** with assertions that cover:
    - normal/success paths,
    - relevant edge cases,
    - error handling where applicable.
