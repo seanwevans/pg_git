@@ -41,4 +41,4 @@ CREATE SCHEMA IF NOT EXISTS pg_git;
 \i pgit-version.sql
 \i pgit-version-updates.sql
 \i pgit-whatchanged.sql
-\i version-updates.sql
+\i pgit-version-updates-0.2.0--0.3.0.sql

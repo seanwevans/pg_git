@@ -4,8 +4,13 @@ EXTVERSION = 0.4.0
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 
-DATA = sql/$(EXTENSION)--$(EXTVERSION).sql \
-       $(filter-out sql/$(EXTENSION)--$(EXTVERSION).sql,$(wildcard sql/*.sql)) \
+# Installable SQL assets only:
+#   - extension install/upgrade entrypoints in sql/*.sql
+#   - schema/function fragments loaded by those entrypoints
+# Explicitly exclude non-extension artifacts accidentally placed in sql/.
+DATA = \
+       $(sort $(filter-out sql/pgit-ci.sql sql/pgit-control.sql, \
+       $(wildcard sql/*.sql))) \
        $(wildcard sql/schema/*.sql) \
        $(wildcard sql/functions/*.sql)
 
