@@ -1,0 +1,16 @@
+# Ordered pg_prove test manifest.
+# Keep one path per line. Execution order is authoritative.
+# Include bootstrap scripts (e.g., init.sql) before *_test.sql files.
+test/sql/init.sql
+test/sql/add_test.sql
+test/sql/branch_test.sql
+test/sql/commit_test.sql
+test/sql/diff_test.sql
+test/sql/merge_test.sql
+test/sql/remote_test.sql
+test/sql/advanced_test.sql
+test/sql/search_path_qualification_test.sql
+test/sql/gc_test.sql
+test/sql/https_fetch_test.sql
+test/sql/optimize_indexes_test.sql
+test/sql/gc_performance_test.sql

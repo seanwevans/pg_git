@@ -1,8 +1,19 @@
+SHELL := /bin/bash
+
 EXTENSION = pg_git
 EXTVERSION = 0.4.0
 
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
+
+# PostgreSQL connection defaults for local development/testing.
+PGDATABASE ?= postgres
+PGHOST ?= localhost
+PGPORT ?= 5432
+PGUSER ?= postgres
+
+# Shared psql command for test/preflight checks.
+PSQL := psql -v ON_ERROR_STOP=1 -X -w -h $(PGHOST) -p $(PGPORT) -U $(PGUSER) -d $(PGDATABASE)
 
 # Installable SQL assets only:
 #   - extension install/upgrade entrypoints in sql/*.sql

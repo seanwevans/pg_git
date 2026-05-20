@@ -139,10 +139,10 @@ Using Docker:
 docker-compose up -d
 
 # Access psql console
-docker-compose exec db psql -U postgres
+docker-compose exec db psql -U postgres -d pg_git_dev
 
-# Run tests
-docker-compose run test
+# Run tests (includes the same preflight checks as local runs)
+docker-compose run --rm test
 
 ```
 
