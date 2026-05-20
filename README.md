@@ -111,8 +111,25 @@ CREATE EXTENSION pg_git;
 
 ## Testing
 
+Test suites are split by speed and external dependencies:
+
+- `test-core` (default): deterministic SQL tests for local logic. **Expected runtime:** ~10-30 seconds in Docker on a modern laptop. **Prerequisites:** running PostgreSQL test database.
+- `test-integration` (opt-in): HTTPS transport checks in `test/sql/https_fetch_test.sql`. **Expected runtime:** ~30-90 seconds depending on network/container startup. **Prerequisites:** set `RUN_INTEGRATION=1`; `plpython3u` available; outbound HTTPS/network available.
+- `test-performance` (opt-in): GC performance regression checks in `test/sql/gc_performance_test.sql`. **Expected runtime:** ~1-5+ minutes depending on machine load. **Prerequisites:** set `RUN_PERF=1`; stable CPU/IO for consistent measurements.
+- `test-all`: runs `test-core` and then conditionally runs integration/performance suites when their flags are enabled.
+
 ```bash
-make test
+# Fast default suite (also what `make test` runs)
+make test-core
+
+# Explicitly include HTTPS/integration tests
+RUN_INTEGRATION=1 make test-integration
+
+# Explicitly include performance tests
+RUN_PERF=1 make test-performance
+
+# Run everything (slow suites run only when flags are set)
+RUN_INTEGRATION=1 RUN_PERF=1 make test-all
 ```
 
 ## Development

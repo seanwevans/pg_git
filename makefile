@@ -14,8 +14,8 @@ DATA = \
        $(wildcard sql/schema/*.sql) \
        $(wildcard sql/functions/*.sql)
 
-# Register new SQL tests here in execution order (add matching test/sql/*.sql files to this list).
-TESTS := \
+# Deterministic, fast SQL tests that run on every change.
+CORE_TESTS := \
        test/sql/init.sql \
        test/sql/add_test.sql \
        test/sql/branch_test.sql \
@@ -25,11 +25,17 @@ TESTS := \
        test/sql/remote_test.sql \
        test/sql/advanced_test.sql \
        test/sql/gc_test.sql \
-       test/sql/https_fetch_test.sql \
-       test/sql/optimize_indexes_test.sql \
+       test/sql/optimize_indexes_test.sql
+
+# Slower/less deterministic suites are opt-in.
+INTEGRATION_TESTS := \
+       test/sql/https_fetch_test.sql
+
+PERFORMANCE_TESTS := \
        test/sql/gc_performance_test.sql
 
-
+# Backward-compatible aggregate for PGXS regress helpers.
+TESTS := $(CORE_TESTS) $(INTEGRATION_TESTS) $(PERFORMANCE_TESTS)
 
 # Derive the target names from the TESTS list to keep them in sync.
 REGRESS := $(notdir $(basename $(TESTS)))
@@ -37,6 +43,26 @@ REGRESS_OPTS = --inputdir=test
 
 include $(PGXS)
 
-.PHONY: test
-test:
-	pg_prove -d postgres $(TESTS)
+.PHONY: test test-core test-integration test-performance test-all
+
+# Keep `make test` as fast default.
+test: test-core
+
+test-core:
+	pg_prove -d postgres $(CORE_TESTS)
+
+test-integration:
+	@if [ "$(RUN_INTEGRATION)" != "1" ]; then \
+		echo "Skipping integration tests. Set RUN_INTEGRATION=1 to run them."; \
+		exit 0; \
+	fi
+	pg_prove -d postgres $(INTEGRATION_TESTS)
+
+test-performance:
+	@if [ "$(RUN_PERF)" != "1" ]; then \
+		echo "Skipping performance tests. Set RUN_PERF=1 to run them."; \
+		exit 0; \
+	fi
+	pg_prove -d postgres $(PERFORMANCE_TESTS)
+
+test-all: test-core test-integration test-performance
