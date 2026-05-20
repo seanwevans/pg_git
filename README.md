@@ -32,7 +32,7 @@ A PostgreSQL-native Git implementation.
 - Instaweb interface
 - Pack and repack support
 - Object replacement
- - Remote operations with HTTPS transport (uses `plpython3u`)
+- Remote operations with HTTPS transport (uses `plpython3u`)
 - Stash management
 - Worktree support
 - Bisect debugging
@@ -64,21 +64,31 @@ extension is created. Both the control file and the SQL script are
 installed by `make install`.
 
 ## Dependencies
+
+### Required (extension install/runtime)
 - PostgreSQL 12+
-- PL/pgSQL
-- pgcrypto
-- pg_trgm
+- PL/pgSQL (`plpgsql`)
+- `pgcrypto`
+- `pg_trgm`
+- `plpython3u`
+
+### Optional (feature usage)
+- None currently. All listed dependencies are required to install `pg_git` as shipped.
+
+> **Why `plpython3u` is required:** the extension defines HTTPS helper functions (for example `pg_git.http_fetch`) in `LANGUAGE plpython3u`. That means `plpython3u` must be present when `CREATE EXTENSION pg_git` runs. In practice, only HTTPS-related features use those functions directly.
 
 ## Installation
 ```bash
 make && make install
 
 # In PostgreSQL:
+CREATE EXTENSION plpython3u;
 CREATE EXTENSION pgcrypto;
 CREATE EXTENSION pg_trgm;
 CREATE EXTENSION pg_git;
+
 # Alternatively, from the command line:
-# psql -d yourdb -c "CREATE EXTENSION pg_git;"
+# psql -d yourdb -c "CREATE EXTENSION plpython3u; CREATE EXTENSION pgcrypto; CREATE EXTENSION pg_trgm; CREATE EXTENSION pg_git;"
 ```
 
 ## Testing
@@ -170,4 +180,3 @@ Current: 0.4.0
 
 ## License
 See [LICENSE](LICENSE) for the full text of the PostgreSQL License.
-

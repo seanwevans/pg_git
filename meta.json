@@ -43,6 +43,11 @@
         "version control",
         "vcs",
         "repository"
-    ]
+    ],
+    "x_feature_dependencies": {
+        "https_transport": {
+            "uses": "plpython3u",
+            "note": "plpython3u is required at extension install time because HTTPS helper functions are defined in LANGUAGE plpython3u; non-HTTPS workflows do not call those functions directly."
+        }
+    }
 }
-
