@@ -111,19 +111,26 @@ CREATE EXTENSION pg_git;
 
 ## Testing
 
-`make test` now runs a preflight (`test-preflight`) before executing SQL TAP tests. The preflight checks:
-- PostgreSQL connectivity using `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`
-- required extensions are enabled (`pgcrypto`, `pg_trgm`, `plpython3u`)
-- `pg_prove` is installed and on `PATH`
+Test suites are split by speed and external dependencies:
 
-### Known-good test matrix
+- `test-core` (default): deterministic SQL tests for local logic. **Expected runtime:** ~10-30 seconds in Docker on a modern laptop. **Prerequisites:** running PostgreSQL test database.
+- `test-integration` (opt-in): HTTPS transport checks in `test/sql/https_fetch_test.sql`. **Expected runtime:** ~30-90 seconds depending on network/container startup. **Prerequisites:** set `RUN_INTEGRATION=1`; `plpython3u` available; outbound HTTPS/network available.
+- `test-performance` (opt-in): GC performance regression checks in `test/sql/gc_performance_test.sql`. **Expected runtime:** ~1-5+ minutes depending on machine load. **Prerequisites:** set `RUN_PERF=1`; stable CPU/IO for consistent measurements.
+- `test-all`: runs `test-core` and then conditionally runs integration/performance suites when their flags are enabled.
 
-| Environment | Connection setup | Test command |
-| --- | --- | --- |
-| Local PostgreSQL | `export PGHOST=localhost PGPORT=5432 PGUSER=postgres PGDATABASE=postgres` | `make test` |
-| Docker Compose (`db` service) | `PGHOST=db PGPORT=5432 PGUSER=postgres PGDATABASE=pg_git_dev` (already set in `docker-compose.yml`) | `docker-compose run --rm test` |
+```bash
+# Fast default suite (also what `make test` runs)
+make test-core
 
-If preflight fails, fix the reported prerequisite and re-run `make test`.
+# Explicitly include HTTPS/integration tests
+RUN_INTEGRATION=1 make test-integration
+
+# Explicitly include performance tests
+RUN_PERF=1 make test-performance
+
+# Run everything (slow suites run only when flags are set)
+RUN_INTEGRATION=1 RUN_PERF=1 make test-all
+```
 
 ## Development
 Using Docker:

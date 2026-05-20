@@ -25,9 +25,28 @@ DATA = \
        $(wildcard sql/schema/*.sql) \
        $(wildcard sql/functions/*.sql)
 
-# Authoritative test order lives in test/sql/manifest.txt.
-TEST_MANIFEST := test/sql/manifest.txt
-TESTS := $(shell sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$$/d' $(TEST_MANIFEST))
+# Deterministic, fast SQL tests that run on every change.
+CORE_TESTS := \
+       test/sql/init.sql \
+       test/sql/add_test.sql \
+       test/sql/branch_test.sql \
+       test/sql/commit_test.sql \
+       test/sql/diff_test.sql \
+       test/sql/merge_test.sql \
+       test/sql/remote_test.sql \
+       test/sql/advanced_test.sql \
+       test/sql/gc_test.sql \
+       test/sql/optimize_indexes_test.sql
+
+# Slower/less deterministic suites are opt-in.
+INTEGRATION_TESTS := \
+       test/sql/https_fetch_test.sql
+
+PERFORMANCE_TESTS := \
+       test/sql/gc_performance_test.sql
+
+# Backward-compatible aggregate for PGXS regress helpers.
+TESTS := $(CORE_TESTS) $(INTEGRATION_TESTS) $(PERFORMANCE_TESTS)
 
 # Derive the target names from the TESTS list to keep them in sync.
 REGRESS := $(notdir $(basename $(TESTS)))
@@ -35,46 +54,26 @@ REGRESS_OPTS = --inputdir=test
 
 include $(PGXS)
 
-.PHONY: test test-preflight
+.PHONY: test test-core test-integration test-performance test-all
 
-test-preflight:
-	@command -v pg_prove >/dev/null 2>&1 || { \
-		echo "ERROR: pg_prove is not installed or not on PATH."; \
-		echo "Install it via your package manager (often in postgresql-test/perl-Test-Harness-TAP packages)."; \
-		exit 1; \
-	}
-	@$(PSQL) -c 'SELECT 1;' >/dev/null || { \
-		echo "ERROR: unable to connect to PostgreSQL using PGHOST=$(PGHOST) PGPORT=$(PGPORT) PGUSER=$(PGUSER) PGDATABASE=$(PGDATABASE)."; \
-		echo "Check credentials, host reachability, and that the database exists."; \
-		exit 1; \
-	}
-	@$(PSQL) -tA -c "SELECT string_agg(e, ', ') FROM (VALUES ('pgcrypto'),('pg_trgm'),('plpython3u')) AS req(e) WHERE NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = req.e);" | \
-		awk 'NF { printf "ERROR: missing required extensions: %s\n", $$0; print "Install with: CREATE EXTENSION <name>;"; exit 1 }'
-	@echo "Preflight checks passed for PGHOST=$(PGHOST) PGPORT=$(PGPORT) PGUSER=$(PGUSER) PGDATABASE=$(PGDATABASE)."
+# Keep `make test` as fast default.
+test: test-core
 
-test: test-preflight
-	pg_prove -h $(PGHOST) -p $(PGPORT) -U $(PGUSER) -d $(PGDATABASE) $(TESTS)
+test-core:
+	pg_prove -d postgres $(CORE_TESTS)
 
-.PHONY: test test-one test-one-verbose test-list
-test:
-	pg_prove -d postgres $(TESTS)
-
-# Focused rerun for a single SQL test file: make test-one TEST=test/sql/merge_test.sql
-test-one:
-	@if [ -z "$(TEST)" ]; then \
-		echo "Usage: make test-one TEST=test/sql/<file>.sql"; \
-		exit 1; \
+test-integration:
+	@if [ "$(RUN_INTEGRATION)" != "1" ]; then \
+		echo "Skipping integration tests. Set RUN_INTEGRATION=1 to run them."; \
+		exit 0; \
 	fi
-	pg_prove -d postgres $(TEST)
+	pg_prove -d postgres $(INTEGRATION_TESTS)
 
-# Verbose focused rerun for richer diagnostics
-test-one-verbose:
-	@if [ -z "$(TEST)" ]; then \
-		echo "Usage: make test-one-verbose TEST=test/sql/<file>.sql"; \
-		exit 1; \
+test-performance:
+	@if [ "$(RUN_PERF)" != "1" ]; then \
+		echo "Skipping performance tests. Set RUN_PERF=1 to run them."; \
+		exit 0; \
 	fi
-	pg_prove -v -d postgres $(TEST)
+	pg_prove -d postgres $(PERFORMANCE_TESTS)
 
-# Print registered SQL test files in execution order
-test-list:
-	@printf "%s\n" $(TESTS)
+test-all: test-core test-integration test-performance
