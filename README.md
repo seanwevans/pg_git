@@ -111,9 +111,19 @@ CREATE EXTENSION pg_git;
 
 ## Testing
 
-```bash
-make test
-```
+`make test` now runs a preflight (`test-preflight`) before executing SQL TAP tests. The preflight checks:
+- PostgreSQL connectivity using `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`
+- required extensions are enabled (`pgcrypto`, `pg_trgm`, `plpython3u`)
+- `pg_prove` is installed and on `PATH`
+
+### Known-good test matrix
+
+| Environment | Connection setup | Test command |
+| --- | --- | --- |
+| Local PostgreSQL | `export PGHOST=localhost PGPORT=5432 PGUSER=postgres PGDATABASE=postgres` | `make test` |
+| Docker Compose (`db` service) | `PGHOST=db PGPORT=5432 PGUSER=postgres PGDATABASE=pg_git_dev` (already set in `docker-compose.yml`) | `docker-compose run --rm test` |
+
+If preflight fails, fix the reported prerequisite and re-run `make test`.
 
 ## Development
 Using Docker:
@@ -122,10 +132,10 @@ Using Docker:
 docker-compose up -d
 
 # Access psql console
-docker-compose exec db psql -U postgres
+docker-compose exec db psql -U postgres -d pg_git_dev
 
-# Run tests
-docker-compose run test
+# Run tests (includes the same preflight checks as local runs)
+docker-compose run --rm test
 
 ```
 
