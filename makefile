@@ -16,6 +16,9 @@ PGUSER ?= postgres
 # Shared psql command for test/preflight checks.
 PSQL := psql -v ON_ERROR_STOP=1 -X -w -h $(PGHOST) -p $(PGPORT) -U $(PGUSER) -d $(PGDATABASE)
 
+# Shared pg_prove command honoring connection defaults/overrides.
+PG_PROVE := PGHOST=$(PGHOST) PGPORT=$(PGPORT) PGUSER=$(PGUSER) PGDATABASE=$(PGDATABASE) pg_prove
+
 # Installable SQL assets only:
 #   - extension install/upgrade entrypoints in sql/*.sql
 #   - schema/function fragments loaded by those entrypoints
@@ -60,43 +63,49 @@ else
 $(warning PGXS makefile not found at $(PGXS); build/install targets are unavailable in this environment.)
 endif
 
-.PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose
+.PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose check-pg_prove
+
+check-pg_prove:
+	@command -v pg_prove >/dev/null 2>&1 || { \
+		echo "pg_prove not found. Install pgTAP test runner (e.g., apt install libtap-parser-sourcehandler-pgtap-perl)."; \
+		exit 127; \
+	}
 
 # Keep `make test` as fast default.
 test: test-core
 
-test-core:
-	pg_prove -d postgres $(CORE_TESTS)
+test-core: check-pg_prove
+	$(PG_PROVE) $(CORE_TESTS)
 
-test-integration:
+test-integration: check-pg_prove
 	@if [ "$(RUN_INTEGRATION)" != "1" ]; then \
 		echo "Skipping integration tests. Set RUN_INTEGRATION=1 to run them."; \
 		exit 0; \
 	fi
-	pg_prove -d postgres $(INTEGRATION_TESTS)
+	$(PG_PROVE) $(INTEGRATION_TESTS)
 
-test-performance:
+test-performance: check-pg_prove
 	@if [ "$(RUN_PERF)" != "1" ]; then \
 		echo "Skipping performance tests. Set RUN_PERF=1 to run them."; \
 		exit 0; \
 	fi
-	pg_prove -d postgres $(PERFORMANCE_TESTS)
+	$(PG_PROVE) $(PERFORMANCE_TESTS)
 
 test-all: test-core test-integration test-performance
 
 
 # Run a single SQL test file (e.g., make test-one TEST=test/sql/merge_test.sql).
-test-one:
+test-one: check-pg_prove
 	@if [ -z "$(TEST)" ]; then \
 		echo "Usage: make test-one TEST=test/sql/<name>.sql"; \
 		exit 2; \
 	fi
-	pg_prove -d postgres $(TEST)
+	$(PG_PROVE) $(TEST)
 
 # Verbose single-test execution for local triage/debugging.
-test-one-verbose:
+test-one-verbose: check-pg_prove
 	@if [ -z "$(TEST)" ]; then \
 		echo "Usage: make test-one-verbose TEST=test/sql/<name>.sql"; \
 		exit 2; \
 	fi
-	pg_prove --verbose -d postgres $(TEST)
+	$(PG_PROVE) --verbose $(TEST)
