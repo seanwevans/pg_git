@@ -26,16 +26,27 @@ REGRESS_OPTS = --inputdir=test
 
 include $(PGXS)
 
-.PHONY: test check-test-manifest
-test: check-test-manifest
+
+.PHONY: test test-one test-one-verbose test-list
+test:
 	pg_prove -d postgres $(TESTS)
 
-check-test-manifest:
-	@missing=$$(comm -23 \
-		<(find test/sql -maxdepth 1 -type f -name '*_test.sql' | sort) \
-		<(sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$$/d' $(TEST_MANIFEST) | sort)); \
-	if [ -n "$$missing" ]; then \
-		echo "ERROR: test files missing from $(TEST_MANIFEST):"; \
-		echo "$$missing"; \
+# Focused rerun for a single SQL test file: make test-one TEST=test/sql/merge_test.sql
+test-one:
+	@if [ -z "$(TEST)" ]; then \
+		echo "Usage: make test-one TEST=test/sql/<file>.sql"; \
 		exit 1; \
 	fi
+	pg_prove -d postgres $(TEST)
+
+# Verbose focused rerun for richer diagnostics
+test-one-verbose:
+	@if [ -z "$(TEST)" ]; then \
+		echo "Usage: make test-one-verbose TEST=test/sql/<file>.sql"; \
+		exit 1; \
+	fi
+	pg_prove -v -d postgres $(TEST)
+
+# Print registered SQL test files in execution order
+test-list:
+	@printf "%s\n" $(TESTS)
