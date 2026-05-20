@@ -113,11 +113,12 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION pg_git.merge_base(
+    p_repo_id INTEGER,
     p_commit1 TEXT,
     p_commit2 TEXT
 ) RETURNS TEXT AS $$
     -- Reuse existing merge base finding function
-    SELECT pg_git.find_merge_base(p_commit1, p_commit2);
+    SELECT pg_git.find_merge_base(p_repo_id, p_commit1, p_commit2);
 $$ LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pg_git.rev_list(

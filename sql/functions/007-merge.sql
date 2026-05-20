@@ -2,6 +2,7 @@
 -- pg_git merge operations
 
 CREATE OR REPLACE FUNCTION pg_git.find_merge_base(
+    p_repo_id INTEGER,
     p_commit1 TEXT,
     p_commit2 TEXT
 ) RETURNS TEXT AS $$
@@ -9,24 +10,24 @@ WITH RECURSIVE commit_ancestors AS (
     -- Get all ancestors of commit1
     SELECT hash, parent_hash, 1 AS source
     FROM commits 
-    WHERE hash = p_commit1
+    WHERE repo_id = p_repo_id AND hash = p_commit1
     UNION ALL
     SELECT c.hash, c.parent_hash, 1
     FROM commits c
     JOIN commit_ancestors ca ON ca.parent_hash = c.hash
-    WHERE ca.source = 1
+    WHERE ca.source = 1 AND c.repo_id = p_repo_id
 
     UNION ALL
 
     -- Get all ancestors of commit2
     SELECT hash, parent_hash, 2 AS source
     FROM commits 
-    WHERE hash = p_commit2
+    WHERE repo_id = p_repo_id AND hash = p_commit2
     UNION ALL
     SELECT c.hash, c.parent_hash, 2
     FROM commits c
     JOIN commit_ancestors ca ON ca.parent_hash = c.hash
-    WHERE ca.source = 2
+    WHERE ca.source = 2 AND c.repo_id = p_repo_id
 )
 SELECT hash
 FROM (
@@ -35,22 +36,23 @@ FROM (
     GROUP BY hash
 ) a
 WHERE array_length(sources, 1) > 1
-ORDER BY (SELECT timestamp FROM commits WHERE hash = a.hash) DESC
+ORDER BY (SELECT timestamp FROM commits WHERE repo_id = p_repo_id AND hash = a.hash) DESC
 LIMIT 1;
 $$ LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pg_git.can_fast_forward(
+    p_repo_id INTEGER,
     p_source TEXT,
     p_target TEXT
 ) RETURNS BOOLEAN AS $$
 WITH RECURSIVE ancestor_chain AS (
     SELECT hash, parent_hash
     FROM commits
-    WHERE hash = p_target
+    WHERE repo_id = p_repo_id AND hash = p_target
     UNION ALL
     SELECT c.hash, c.parent_hash
     FROM commits c
-    JOIN ancestor_chain ac ON ac.parent_hash = c.hash
+    JOIN ancestor_chain ac ON ac.parent_hash = c.hash AND c.repo_id = p_repo_id
 )
 SELECT EXISTS (
     SELECT 1 FROM ancestor_chain WHERE hash = p_source
@@ -75,7 +77,7 @@ BEGIN
     FROM refs WHERE repo_id = p_repo_id AND name = p_target_branch;
     
     -- Check if fast-forward is possible
-    IF pg_git.can_fast_forward(v_source_commit, v_target_commit) THEN
+    IF pg_git.can_fast_forward(p_repo_id, v_source_commit, v_target_commit) THEN
         -- Fast-forward merge
         UPDATE refs
         SET commit_hash = v_source_commit
