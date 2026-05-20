@@ -5,21 +5,21 @@ A PostgreSQL-native Git implementation.
 
 ## Features
 
-### Core Operations
-- Core Git operations (init, add, commit, log)
-- Branching and merging
-- Diff generation
-- Reset operations
-- Tag support
-- Remote operations (clone, fetch, push, pull)
-- Repository initialization and cloning
-- File staging and committing
-- Branching and merging with conflict resolution
-- History viewing and diffing
-- Reset and restore operations
-- Schema migrations
-- Repository maintenance (GC, integrity checks, optimization)
-- Notes
+> **Implemented vs Planned**
+> - ✅ **Implemented**: Backed by concrete SQL functions in `sql/functions/*.sql`.
+> - 🧭 **Planned / Aspirational**: Mentioned for roadmap/completeness, but not currently exported as callable functions.
+
+### Core Operations (Implemented)
+- Repository initialization (`init_repository`)
+- File staging (`stage_file`, `unstage_file`)
+- Commit creation (`commit_index`)
+- Commit history and status (`get_log`, `get_decorated_log`, `get_status`, `get_formatted_status`)
+- Branch management (`create_branch`, `list_branches`, `checkout_branch`)
+- Merge primitives (`find_merge_base`, `can_fast_forward`, `merge_branches`)
+- Diff operations (`diff_text`, `diff_blobs`, `diff_commits`)
+- Reset operations (`reset_soft`, `reset_mixed`, `reset_file`)
+- Tag operations (`create_tag`, `list_tags`)
+- Remote operations (`add_remote`, `fetch_remote`, `push`, `pull`, `clone`)
 
 ### Advanced Operations
 - Submodule support
@@ -47,14 +47,32 @@ A PostgreSQL-native Git implementation.
 - Repository maintenance
 - Schema migrations
 - Pack refs optimization
+- ✅ HTTPS transport and credential storage (`store_credentials`, `http_fetch`)
+- ✅ Merge conflict detection (`detect_conflicts`)
+- 🧭 Submodule support
+- 🧭 Sparse checkout for large repositories
+- 🧭 Archive creation
+- 🧭 GPG signature verification for commits and tags
+- 🧭 Reuse recorded resolution (rerere)
+- 🧭 Repository diagnostics / whatchanged view / instaweb interface
+- 🧭 Pack and repack support
+- 🧭 Object replacement
+- 🧭 Stash management
+- 🧭 Worktree support
+- 🧭 Bisect debugging
+- 🧭 Blame tracking
+- 🧭 Cherry-pick and revert
+- 🧭 Grep functionality
+
+### Administrative (Implemented)
+- Schema migration helpers (`get_current_schema_version`, `run_migration`)
+- Garbage collection (`gc`)
+- Repository integrity checks (`verify_integrity`)
+- Index maintenance / optimization (`optimize_indexes`)
 
 ### Plumbing Commands
-- cat-file
-- hash-object
-- ls-tree
-- merge-base
-- rev-list
-- and more...
+- ✅ Tree/index plumbing: `create_tree_from_index`
+- 🧭 Additional low-level commands (`cat-file`, `hash-object`, `ls-tree`, `rev-list`, and more)
 
 ---
 
@@ -121,17 +139,16 @@ SELECT pg_git.init_repository('my_repository', '/path/to/repo');
 -- Clone repository
 SELECT pg_git.clone('https://github.com/org/repo.git', 'local_name', '/path');
 
--- Stage a file
+-- Stage / unstage files
 SELECT pg_git.stage_file(1, 'file.txt', 'content'::bytea);
+SELECT pg_git.unstage_file(1, 'file.txt');
 
 -- Commit
 SELECT pg_git.commit_index(1, 'author', 'Your commit message here');
 
--- Commit verification
-SELECT pg_git.verify_commit(1, 'commit_hash');
-
--- Branch creation
+-- Branch creation and checkout
 SELECT pg_git.create_branch(1, 'feature');
+SELECT pg_git.checkout_branch(1, 'feature');
 
 -- Merge Branch
 SELECT pg_git.merge_branches(1, 'feature', 'main');
@@ -144,35 +161,20 @@ SELECT pg_git.store_credentials(1, 'github.com', 'username', 'token');
 -- `http_fetch` uses Python to perform the actual HTTPS request
 
 -- Garbage collection
-SELECT pg_git.gc(1);
+SELECT * FROM pg_git.gc(1);
 
 -- Integrity verification
-SELECT pg_git.verify_integrity(1);
+SELECT * FROM pg_git.verify_integrity(1);
 
 -- Index optimization
-SELECT pg_git.optimize_indexes(1);
+SELECT * FROM pg_git.optimize_indexes(1);
 
 -- View history
 SELECT * FROM pg_git.get_log(1);
 
--- Submodule support
-SELECT pg_git.submodule_add(1, 'https://repo.git', 'modules/lib');
-
--- Sparse Checkout
-SELECT pg_git.sparse_checkout_set(1, ARRAY['src/*', 'docs/*']);
-
--- Maintenance
-SELECT pg_git.pack_refs(1, true);
-SELECT pg_git.repack(1, true);
-
--- Stash
-SELECT pg_git.stash_save(1, 'WIP changes');
-
--- Blame
-SELECT pg_git.blame(1, 'file.txt');
-
--- Grep
-SELECT pg_git.grep(1, 'pattern');
+-- Tagging
+SELECT pg_git.create_tag(1, 'v1.0.0');
+SELECT * FROM pg_git.list_tags(1);
 ```
 
 ## Version

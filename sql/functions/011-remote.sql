@@ -19,6 +19,9 @@ CREATE TABLE pg_git.remote_refs (
     FOREIGN KEY (repo_id, remote_name) REFERENCES pg_git.remotes(repo_id, name)
 );
 
+COMMENT ON TABLE pg_git.remote_refs IS
+    'Source of truth for fetched remote branch tips. fetch_remote materializes these into refs as <remote>/<branch> tracking refs.';
+
 CREATE OR REPLACE FUNCTION pg_git.add_remote(
     p_repo_id INTEGER,
     p_name TEXT,
@@ -46,12 +49,42 @@ BEGIN
     FROM pg_git.remotes
     WHERE repo_id = p_repo_id AND name = p_remote_name;
 
-    -- In a real implementation, this would:
-    -- 1. Connect to remote database using v_remote_url
-    -- 2. Fetch new objects (blobs, trees, commits)
-    -- 3. Update remote refs
-    -- For now, just return empty result
-    RETURN QUERY SELECT NULL::TEXT, NULL::TEXT, NULL::TEXT WHERE FALSE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Remote % does not exist for repo %', p_remote_name, p_repo_id;
+    END IF;
+
+    -- Source of truth: pg_git.remote_refs stores fetched remote branch tips.
+    -- Materialized remote-tracking refs in refs are derived as <remote>/<branch>.
+    RETURN QUERY
+    WITH tracking AS (
+        SELECT
+            rr.ref_name,
+            (p_remote_name || '/' || rr.ref_name) AS tracking_ref,
+            rr.commit_hash AS remote_hash
+        FROM pg_git.remote_refs rr
+        WHERE rr.repo_id = p_repo_id
+          AND rr.remote_name = p_remote_name
+    ),
+    existing AS (
+        SELECT name, commit_hash
+        FROM refs
+        WHERE repo_id = p_repo_id
+    ),
+    upserted AS (
+        INSERT INTO refs (repo_id, name, commit_hash)
+        SELECT p_repo_id, tracking_ref, remote_hash
+        FROM tracking
+        ON CONFLICT (repo_id, name)
+        DO UPDATE SET commit_hash = EXCLUDED.commit_hash
+        RETURNING name, commit_hash
+    )
+    SELECT
+        t.ref_name,
+        e.commit_hash AS old_hash,
+        u.commit_hash AS new_hash
+    FROM upserted u
+    JOIN tracking t ON t.tracking_ref = u.name
+    LEFT JOIN existing e ON e.name = t.tracking_ref;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -86,14 +119,27 @@ CREATE OR REPLACE FUNCTION pg_git.pull(
     p_remote_name TEXT,
     p_ref_name TEXT
 ) RETURNS TEXT AS $$
+DECLARE
+    v_tracking_ref TEXT;
 BEGIN
     -- Fetch from remote
     PERFORM pg_git.fetch_remote(p_repo_id, p_remote_name);
-    
-    -- Merge remote ref into local
+
+    v_tracking_ref := p_remote_name || '/' || p_ref_name;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM refs
+        WHERE repo_id = p_repo_id
+          AND name = v_tracking_ref
+    ) THEN
+        RAISE EXCEPTION 'Remote-tracking ref % does not exist for repo %', v_tracking_ref, p_repo_id;
+    END IF;
+
+    -- Merge verified remote-tracking ref into local branch
     RETURN pg_git.merge_branches(
         p_repo_id,
-        p_remote_name || '/' || p_ref_name,
+        v_tracking_ref,
         p_ref_name
     );
 END;

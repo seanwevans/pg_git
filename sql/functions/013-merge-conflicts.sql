@@ -25,7 +25,7 @@ DECLARE
     v_base_commit TEXT;
 BEGIN
     -- Find merge base
-    v_base_commit := pg_git.find_merge_base(p_our_commit, p_their_commit);
+    v_base_commit := pg_git.find_merge_base(p_repo_id, p_our_commit, p_their_commit);
     
     RETURN QUERY
     WITH our_files AS (
