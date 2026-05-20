@@ -2,12 +2,12 @@
 -- pg_git merge conflict resolution
 
 CREATE TABLE pg_git.merge_conflicts (
-    repo_id INTEGER REFERENCES repositories(id),
+    repo_id INTEGER REFERENCES pg_git.repositories(id),
     path TEXT NOT NULL,
-    our_blob_hash TEXT REFERENCES blobs(hash),
-    their_blob_hash TEXT REFERENCES blobs(hash),
-    base_blob_hash TEXT REFERENCES blobs(hash),
-    resolution_blob_hash TEXT REFERENCES blobs(hash),
+    our_blob_hash TEXT REFERENCES pg_git.blobs(hash),
+    their_blob_hash TEXT REFERENCES pg_git.blobs(hash),
+    base_blob_hash TEXT REFERENCES pg_git.blobs(hash),
+    resolution_blob_hash TEXT REFERENCES pg_git.blobs(hash),
     status TEXT CHECK (status IN ('unresolved', 'resolved', 'ignored')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (repo_id, path)

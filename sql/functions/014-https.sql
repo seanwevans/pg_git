@@ -2,7 +2,7 @@
 -- pg_git HTTPS transport
 
 CREATE TABLE pg_git.credentials (
-    repo_id INTEGER REFERENCES repositories(id),
+    repo_id INTEGER REFERENCES pg_git.repositories(id),
     host TEXT NOT NULL,
     username TEXT NOT NULL,
     password BYTEA NOT NULL,

@@ -2,7 +2,7 @@
 -- pg_git remote operations
 
 CREATE TABLE pg_git.remotes (
-    repo_id INTEGER REFERENCES repositories(id),
+    repo_id INTEGER REFERENCES pg_git.repositories(id),
     name TEXT NOT NULL,
     url TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -48,8 +48,8 @@ BEGIN
 
     -- In a real implementation, this would:
     -- 1. Connect to remote database using v_remote_url
-    -- 2. Fetch new objects (blobs, trees, commits)
-    -- 3. Update remote refs
+    -- 2. Fetch new objects (pg_git.blobs, pg_git.trees, pg_git.commits)
+    -- 3. Update remote pg_git.refs
     -- For now, just return empty result
     RETURN QUERY SELECT NULL::TEXT, NULL::TEXT, NULL::TEXT WHERE FALSE;
 END;
@@ -71,7 +71,7 @@ BEGIN
 
     -- Get local ref
     SELECT commit_hash INTO v_commit_hash
-    FROM refs WHERE repo_id = p_repo_id AND name = p_ref_name;
+    FROM pg_git.refs WHERE repo_id = p_repo_id AND name = p_ref_name;
 
     -- In a real implementation, this would:
     -- 1. Connect to remote database

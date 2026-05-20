@@ -1,4 +1,4 @@
-CREATE TABLE repositories (
+CREATE TABLE pg_git.repositories (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     path TEXT NOT NULL UNIQUE,
@@ -15,7 +15,7 @@ DECLARE
     v_initial_commit TEXT;
 BEGIN
     -- Create repository record
-    INSERT INTO repositories (name, path)
+    INSERT INTO pg_git.repositories (name, path)
     VALUES (p_name, p_path)
     RETURNING id INTO v_repo_id;
     

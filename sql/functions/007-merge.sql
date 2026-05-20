@@ -8,11 +8,11 @@ CREATE OR REPLACE FUNCTION pg_git.find_merge_base(
 WITH RECURSIVE commit_ancestors AS (
     -- Get all ancestors of commit1
     SELECT hash, parent_hash, 1 AS source
-    FROM commits 
+    FROM pg_git.commits 
     WHERE hash = p_commit1
     UNION ALL
     SELECT c.hash, c.parent_hash, 1
-    FROM commits c
+    FROM pg_git.commits c
     JOIN commit_ancestors ca ON ca.parent_hash = c.hash
     WHERE ca.source = 1
 
@@ -20,11 +20,11 @@ WITH RECURSIVE commit_ancestors AS (
 
     -- Get all ancestors of commit2
     SELECT hash, parent_hash, 2 AS source
-    FROM commits 
+    FROM pg_git.commits 
     WHERE hash = p_commit2
     UNION ALL
     SELECT c.hash, c.parent_hash, 2
-    FROM commits c
+    FROM pg_git.commits c
     JOIN commit_ancestors ca ON ca.parent_hash = c.hash
     WHERE ca.source = 2
 )
@@ -35,7 +35,7 @@ FROM (
     GROUP BY hash
 ) a
 WHERE array_length(sources, 1) > 1
-ORDER BY (SELECT timestamp FROM commits WHERE hash = a.hash) DESC
+ORDER BY (SELECT timestamp FROM pg_git.commits WHERE hash = a.hash) DESC
 LIMIT 1;
 $$ LANGUAGE sql;
 
@@ -45,11 +45,11 @@ CREATE OR REPLACE FUNCTION pg_git.can_fast_forward(
 ) RETURNS BOOLEAN AS $$
 WITH RECURSIVE ancestor_chain AS (
     SELECT hash, parent_hash
-    FROM commits
+    FROM pg_git.commits
     WHERE hash = p_target
     UNION ALL
     SELECT c.hash, c.parent_hash
-    FROM commits c
+    FROM pg_git.commits c
     JOIN ancestor_chain ac ON ac.parent_hash = c.hash
 )
 SELECT EXISTS (
@@ -69,15 +69,15 @@ DECLARE
 BEGIN
     -- Get commit hashes
     SELECT commit_hash INTO v_source_commit
-    FROM refs WHERE repo_id = p_repo_id AND name = p_source_branch;
+    FROM pg_git.refs WHERE repo_id = p_repo_id AND name = p_source_branch;
     
     SELECT commit_hash INTO v_target_commit
-    FROM refs WHERE repo_id = p_repo_id AND name = p_target_branch;
+    FROM pg_git.refs WHERE repo_id = p_repo_id AND name = p_target_branch;
     
     -- Check if fast-forward is possible
     IF pg_git.can_fast_forward(v_source_commit, v_target_commit) THEN
         -- Fast-forward merge
-        UPDATE refs
+        UPDATE pg_git.refs
         SET commit_hash = v_source_commit
         WHERE repo_id = p_repo_id AND name = p_target_branch;
         

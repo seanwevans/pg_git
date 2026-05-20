@@ -12,12 +12,12 @@ DECLARE
     v_old_content TEXT;
     v_new_content TEXT;
 BEGIN
-    -- Get content from blobs
+    -- Get content from pg_git.blobs
     SELECT encode(content, 'escape') INTO v_old_content
-    FROM blobs WHERE hash = p_old_hash;
+    FROM pg_git.blobs WHERE hash = p_old_hash;
     
     SELECT encode(content, 'escape') INTO v_new_content
-    FROM blobs WHERE hash = p_new_hash;
+    FROM pg_git.blobs WHERE hash = p_new_hash;
     
     RETURN QUERY
     SELECT *
@@ -78,15 +78,15 @@ DECLARE
 BEGIN
     -- Get tree hashes
     SELECT repo_id, tree_hash INTO v_repo_id, v_old_tree
-    FROM commits WHERE hash = p_old_commit;
+    FROM pg_git.commits WHERE hash = p_old_commit;
 
     IF v_repo_id IS NULL THEN
         SELECT repo_id INTO v_repo_id
-        FROM commits WHERE hash = p_new_commit;
+        FROM pg_git.commits WHERE hash = p_new_commit;
     END IF;
 
     SELECT tree_hash INTO v_new_tree
-    FROM commits WHERE hash = p_new_commit AND repo_id = v_repo_id;
+    FROM pg_git.commits WHERE hash = p_new_commit AND repo_id = v_repo_id;
 
     RETURN QUERY
     SELECT

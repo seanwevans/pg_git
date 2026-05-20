@@ -2,7 +2,7 @@
 -- pg_git tag operations
 
 CREATE TABLE pg_git.tags (
-    repo_id INTEGER REFERENCES repositories(id),
+    repo_id INTEGER REFERENCES pg_git.repositories(id),
     name TEXT NOT NULL,
     target_hash TEXT NOT NULL,
     tagger TEXT NOT NULL,
@@ -24,7 +24,7 @@ BEGIN
     -- Resolve target to commit hash
     IF p_target = 'HEAD' THEN
         SELECT commit_hash INTO v_target_hash
-        FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD';
+        FROM pg_git.refs WHERE repo_id = p_repo_id AND name = 'HEAD';
     ELSE
         v_target_hash := p_target;
     END IF;
