@@ -35,6 +35,7 @@ CORE_TESTS := \
        test/sql/merge_test.sql \
        test/sql/remote_test.sql \
        test/sql/advanced_test.sql \
+       test/sql/search_path_qualification_test.sql \
        test/sql/gc_test.sql \
        test/sql/optimize_indexes_test.sql
 
@@ -54,7 +55,7 @@ REGRESS_OPTS = --inputdir=test
 
 include $(PGXS)
 
-.PHONY: test test-core test-integration test-performance test-all
+.PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose
 
 # Keep `make test` as fast default.
 test: test-core
@@ -77,3 +78,20 @@ test-performance:
 	pg_prove -d postgres $(PERFORMANCE_TESTS)
 
 test-all: test-core test-integration test-performance
+
+
+# Run a single SQL test file (e.g., make test-one TEST=test/sql/merge_test.sql).
+test-one:
+	@if [ -z "$(TEST)" ]; then \
+		echo "Usage: make test-one TEST=test/sql/<name>.sql"; \
+		exit 2; \
+	fi
+	pg_prove -d postgres $(TEST)
+
+# Verbose single-test execution for local triage/debugging.
+test-one-verbose:
+	@if [ -z "$(TEST)" ]; then \
+		echo "Usage: make test-one-verbose TEST=test/sql/<name>.sql"; \
+		exit 2; \
+	fi
+	pg_prove --verbose -d postgres $(TEST)
