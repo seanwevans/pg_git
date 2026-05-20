@@ -5,6 +5,7 @@ EXTVERSION = 0.4.0
 
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
+HAVE_PGXS := $(if $(wildcard $(PGXS)),1,0)
 
 # PostgreSQL connection defaults for local development/testing.
 PGDATABASE ?= postgres
@@ -53,7 +54,11 @@ TESTS := $(CORE_TESTS) $(INTEGRATION_TESTS) $(PERFORMANCE_TESTS)
 REGRESS := $(notdir $(basename $(TESTS)))
 REGRESS_OPTS = --inputdir=test
 
+ifeq ($(HAVE_PGXS),1)
 include $(PGXS)
+else
+$(warning PGXS makefile not found at $(PGXS); build/install targets are unavailable in this environment.)
+endif
 
 .PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose
 
