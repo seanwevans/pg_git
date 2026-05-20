@@ -4,16 +4,23 @@ EXTVERSION = 0.4.0
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 
-DATA = sql/$(EXTENSION)--$(EXTVERSION).sql \
-       $(filter-out sql/$(EXTENSION)--$(EXTVERSION).sql,$(wildcard sql/*.sql)) \
+# Installable SQL assets only:
+#   - extension install/upgrade entrypoints in sql/*.sql
+#   - schema/function fragments loaded by those entrypoints
+# Explicitly exclude non-extension artifacts accidentally placed in sql/.
+DATA = \
+       $(sort $(filter-out sql/pgit-ci.sql sql/pgit-control.sql, \
+       $(wildcard sql/*.sql))) \
        $(wildcard sql/schema/*.sql) \
        $(wildcard sql/functions/*.sql)
 
+# Register new SQL tests here in execution order (add matching test/sql/*.sql files to this list).
 TESTS := \
        test/sql/init.sql \
        test/sql/add_test.sql \
        test/sql/branch_test.sql \
        test/sql/commit_test.sql \
+       test/sql/diff_test.sql \
        test/sql/merge_test.sql \
        test/sql/remote_test.sql \
        test/sql/advanced_test.sql \
@@ -33,4 +40,3 @@ include $(PGXS)
 .PHONY: test
 test:
 	pg_prove -d postgres $(TESTS)
-

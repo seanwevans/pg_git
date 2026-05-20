@@ -2,6 +2,7 @@
 -- pg_git merge operations
 
 CREATE OR REPLACE FUNCTION pg_git.find_merge_base(
+    p_repo_id INTEGER,
     p_commit1 TEXT,
     p_commit2 TEXT
 ) RETURNS TEXT AS $$
@@ -14,7 +15,7 @@ WITH RECURSIVE commit_ancestors AS (
     SELECT c.hash, c.parent_hash, 1
     FROM pg_git.commits c
     JOIN commit_ancestors ca ON ca.parent_hash = c.hash
-    WHERE ca.source = 1
+    WHERE ca.source = 1 AND c.repo_id = p_repo_id
 
     UNION ALL
 
@@ -26,7 +27,7 @@ WITH RECURSIVE commit_ancestors AS (
     SELECT c.hash, c.parent_hash, 2
     FROM pg_git.commits c
     JOIN commit_ancestors ca ON ca.parent_hash = c.hash
-    WHERE ca.source = 2
+    WHERE ca.source = 2 AND c.repo_id = p_repo_id
 )
 SELECT hash
 FROM (
@@ -40,6 +41,7 @@ LIMIT 1;
 $$ LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pg_git.can_fast_forward(
+    p_repo_id INTEGER,
     p_source TEXT,
     p_target TEXT
 ) RETURNS BOOLEAN AS $$
@@ -75,7 +77,7 @@ BEGIN
     FROM pg_git.refs WHERE repo_id = p_repo_id AND name = p_target_branch;
     
     -- Check if fast-forward is possible
-    IF pg_git.can_fast_forward(v_source_commit, v_target_commit) THEN
+    IF pg_git.can_fast_forward(p_repo_id, v_source_commit, v_target_commit) THEN
         -- Fast-forward merge
         UPDATE pg_git.refs
         SET commit_hash = v_source_commit

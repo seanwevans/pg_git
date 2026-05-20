@@ -4,7 +4,7 @@
     "description": "A PostgreSQL extension implementing Git-like version control functionality using native database features",
     "version": "0.4.0",
     "maintainer": [
-        "pg_git maintainers <your.email@example.com>"
+        "Sean Evans <sean.w.evans@gmail.com>"
     ],
     "license": "postgresql",
     "provides": {
@@ -33,16 +33,22 @@
             "type": "git"
         }
     },
-    "generated_by": "pg_git maintainers",
+    "generated_by": "Sean Evans",
     "meta-spec": {
         "version": "1.0.0",
         "url": "https://pgxn.org/meta/spec.txt"
     },
     "tags": [
+        "postgresql",
+        "extension",
         "git",
-        "version control",
         "vcs",
         "repository"
-    ]
+    ],
+    "x_feature_dependencies": {
+        "https_transport": {
+            "uses": "plpython3u",
+            "note": "plpython3u is required at extension install time because HTTPS helper functions are defined in LANGUAGE plpython3u; non-HTTPS workflows do not call those functions directly."
+        }
+    }
 }
-
