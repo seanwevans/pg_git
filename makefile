@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 EXTENSION = pg_git
 EXTVERSION = 0.4.0
 
@@ -14,22 +16,9 @@ DATA = \
        $(wildcard sql/schema/*.sql) \
        $(wildcard sql/functions/*.sql)
 
-# Register new SQL tests here in execution order (add matching test/sql/*.sql files to this list).
-TESTS := \
-       test/sql/init.sql \
-       test/sql/add_test.sql \
-       test/sql/branch_test.sql \
-       test/sql/commit_test.sql \
-       test/sql/diff_test.sql \
-       test/sql/merge_test.sql \
-       test/sql/remote_test.sql \
-       test/sql/advanced_test.sql \
-       test/sql/gc_test.sql \
-       test/sql/https_fetch_test.sql \
-       test/sql/optimize_indexes_test.sql \
-       test/sql/gc_performance_test.sql
-
-
+# Authoritative test order lives in test/sql/manifest.txt.
+TEST_MANIFEST := test/sql/manifest.txt
+TESTS := $(shell sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$$/d' $(TEST_MANIFEST))
 
 # Derive the target names from the TESTS list to keep them in sync.
 REGRESS := $(notdir $(basename $(TESTS)))

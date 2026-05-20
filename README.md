@@ -111,7 +111,13 @@ CREATE EXTENSION pg_git;
 
 ## Testing
 
+The authoritative test execution order is defined in `test/sql/manifest.txt`.
+`make test` reads that manifest, runs tests in the listed order, and enforces a guard
+that every `test/sql/*_test.sql` file is present in the manifest.
+
 ```bash
+# Optional overrides for your local PostgreSQL connection used by pg_prove:
+# PGHOST=localhost PGPORT=5432 PGUSER=postgres PGDATABASE=postgres
 make test
 ```
 
