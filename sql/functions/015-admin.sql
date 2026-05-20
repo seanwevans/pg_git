@@ -16,25 +16,25 @@ BEGIN
     CREATE TEMP TABLE tmp_reachable_objects(hash TEXT PRIMARY KEY) ON COMMIT DROP;
 
     WITH RECURSIVE reachable(object_type, hash) AS (
-        -- Start from refs
-        SELECT 'commit', commit_hash FROM refs WHERE repo_id = p_repo_id
+        -- Start from pg_git.refs
+        SELECT 'commit', commit_hash FROM pg_git.refs WHERE repo_id = p_repo_id
         UNION
-        -- Walk parent commits
+        -- Walk parent pg_git.commits
         SELECT 'commit', c.parent_hash
-        FROM commits c
+        FROM pg_git.commits c
         JOIN reachable r
           ON r.object_type = 'commit' AND c.repo_id = p_repo_id AND c.hash = r.hash
         WHERE c.parent_hash IS NOT NULL
         UNION
-        -- Commits reference trees
+        -- Commits reference pg_git.trees
         SELECT 'tree', c.tree_hash
-        FROM commits c
+        FROM pg_git.commits c
         JOIN reachable r
           ON r.object_type = 'commit' AND c.repo_id = p_repo_id AND c.hash = r.hash
         UNION
-        -- Trees reference blobs and subtrees
+        -- Trees reference pg_git.blobs and subtrees
         SELECT (e->>'type')::TEXT, e->>'hash'
-        FROM trees t
+        FROM pg_git.trees t
         JOIN reachable r
           ON r.object_type = 'tree' AND t.repo_id = p_repo_id AND t.hash = r.hash
         CROSS JOIN LATERAL jsonb_array_elements(t.entries) AS e
@@ -45,33 +45,33 @@ BEGIN
     -- Remove unreachable objects
     RETURN QUERY
     WITH deleted_blobs AS (
-        DELETE FROM blobs b
+        DELETE FROM pg_git.blobs b
         WHERE b.repo_id = p_repo_id AND NOT EXISTS (
             SELECT 1 FROM tmp_reachable_objects r WHERE r.hash = b.hash
         )
         RETURNING octet_length(content) AS size
     ), deleted_trees AS (
-        DELETE FROM trees t
+        DELETE FROM pg_git.trees t
         WHERE t.repo_id = p_repo_id AND NOT EXISTS (
             SELECT 1 FROM tmp_reachable_objects r WHERE r.hash = t.hash
         )
         RETURNING octet_length(entries::TEXT) AS size
     ), deleted_commits AS (
-        DELETE FROM commits c
+        DELETE FROM pg_git.commits c
         WHERE c.repo_id = p_repo_id AND NOT EXISTS (
             SELECT 1 FROM tmp_reachable_objects r WHERE r.hash = c.hash
         )
         RETURNING octet_length(message) AS size
     )
-    SELECT 'blobs'::TEXT,
+    SELECT 'pg_git.blobs'::TEXT,
            count(*)::INTEGER,
            COALESCE(sum(size),0)::BIGINT FROM deleted_blobs
     UNION ALL
-    SELECT 'trees'::TEXT,
+    SELECT 'pg_git.trees'::TEXT,
            count(*)::INTEGER,
            COALESCE(sum(size),0)::BIGINT FROM deleted_trees
     UNION ALL
-    SELECT 'commits'::TEXT,
+    SELECT 'pg_git.commits'::TEXT,
            count(*)::INTEGER,
            COALESCE(sum(size),0)::BIGINT FROM deleted_commits;
 
@@ -88,33 +88,33 @@ CREATE OR REPLACE FUNCTION pg_git.verify_integrity(
     details TEXT
 ) AS $$
 BEGIN
-    -- Check dangling commits
+    -- Check dangling pg_git.commits
     RETURN QUERY
     SELECT 'dangling_commits'::TEXT,
            CASE WHEN count(*) = 0 THEN 'ok' ELSE 'warning' END,
-           count(*) || ' dangling commits found'
-    FROM commits c
+           count(*) || ' dangling pg_git.commits found'
+    FROM pg_git.commits c
     WHERE c.repo_id = p_repo_id
-      AND NOT EXISTS (SELECT 1 FROM refs r WHERE r.repo_id = p_repo_id AND r.commit_hash = c.hash);
+      AND NOT EXISTS (SELECT 1 FROM pg_git.refs r WHERE r.repo_id = p_repo_id AND r.commit_hash = c.hash);
 
     -- Check broken parent links
     RETURN QUERY
     SELECT 'broken_parents'::TEXT,
            CASE WHEN count(*) = 0 THEN 'ok' ELSE 'error' END,
-           count(*) || ' commits with invalid parent references'
-    FROM commits c
+           count(*) || ' pg_git.commits with invalid parent references'
+    FROM pg_git.commits c
     WHERE c.repo_id = p_repo_id
       AND c.parent_hash IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM commits p WHERE p.repo_id = p_repo_id AND p.hash = c.parent_hash);
+      AND NOT EXISTS (SELECT 1 FROM pg_git.commits p WHERE p.repo_id = p_repo_id AND p.hash = c.parent_hash);
     
     -- Check broken tree references
     RETURN QUERY
     SELECT 'broken_trees'::TEXT,
            CASE WHEN count(*) = 0 THEN 'ok' ELSE 'error' END,
-           count(*) || ' commits with invalid tree references'
-    FROM commits c
+           count(*) || ' pg_git.commits with invalid tree references'
+    FROM pg_git.commits c
     WHERE c.repo_id = p_repo_id
-      AND NOT EXISTS (SELECT 1 FROM trees t WHERE t.repo_id = p_repo_id AND t.hash = c.tree_hash);
+      AND NOT EXISTS (SELECT 1 FROM pg_git.trees t WHERE t.repo_id = p_repo_id AND t.hash = c.tree_hash);
 END;
 $$ LANGUAGE plpgsql;
 

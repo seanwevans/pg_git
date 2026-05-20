@@ -38,7 +38,7 @@ DECLARE
 BEGIN
     -- Get current HEAD
     SELECT commit_hash INTO v_parent_hash
-    FROM refs
+    FROM pg_git.refs
     WHERE repo_id = p_repo_id AND name = 'HEAD';
 
     -- Create tree from index
@@ -54,8 +54,8 @@ BEGIN
     );
 
     -- Update HEAD and branch reference
-    UPDATE refs SET commit_hash = v_commit_hash WHERE repo_id = p_repo_id AND name = 'HEAD';
-    UPDATE refs
+    UPDATE pg_git.refs SET commit_hash = v_commit_hash WHERE repo_id = p_repo_id AND name = 'HEAD';
+    UPDATE pg_git.refs
     SET commit_hash = v_commit_hash
     WHERE repo_id = p_repo_id
       AND commit_hash = v_parent_hash

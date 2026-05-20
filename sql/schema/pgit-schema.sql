@@ -1,7 +1,7 @@
 -- Central schema definitions for PGit
 
 CREATE TABLE index_entries (
-    repo_id INTEGER REFERENCES repositories(id),
+    repo_id INTEGER REFERENCES pg_git.repositories(id),
     path TEXT NOT NULL,
     blob_hash TEXT NOT NULL,
     mode TEXT NOT NULL DEFAULT '100644',
