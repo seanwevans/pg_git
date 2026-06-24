@@ -1,7 +1,7 @@
 -- Path: /sql/functions/021-sparse-checkout.sql
 -- Sparse checkout functionality
 
-CREATE TABLE pg_git.sparse_patterns (
+CREATE TABLE pggit.sparse_patterns (
     repo_id INTEGER REFERENCES repositories(id),
     pattern TEXT NOT NULL,
     is_negative BOOLEAN DEFAULT FALSE,
@@ -9,17 +9,17 @@ CREATE TABLE pg_git.sparse_patterns (
     PRIMARY KEY (repo_id, pattern)
 );
 
-CREATE OR REPLACE FUNCTION pg_git.sparse_checkout_set(
+CREATE OR REPLACE FUNCTION pggit.sparse_checkout_set(
     p_repo_id INTEGER,
     p_patterns TEXT[]
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
     -- Clear existing patterns
-    DELETE FROM pg_git.sparse_patterns
+    DELETE FROM pggit.sparse_patterns
     WHERE repo_id = p_repo_id;
     
     -- Add new patterns
-    INSERT INTO pg_git.sparse_patterns (repo_id, pattern, is_negative)
+    INSERT INTO pggit.sparse_patterns (repo_id, pattern, is_negative)
     SELECT p_repo_id,
            pattern,
            pattern LIKE '!%'
@@ -27,12 +27,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.sparse_checkout_add(
+CREATE OR REPLACE FUNCTION pggit.sparse_checkout_add(
     p_repo_id INTEGER,
     p_patterns TEXT[]
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
-    INSERT INTO pg_git.sparse_patterns (repo_id, pattern, is_negative)
+    INSERT INTO pggit.sparse_patterns (repo_id, pattern, is_negative)
     SELECT p_repo_id,
            pattern,
            pattern LIKE '!%'
@@ -41,10 +41,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.is_path_in_sparse_checkout(
+CREATE OR REPLACE FUNCTION pggit.is_path_in_sparse_checkout(
     p_repo_id INTEGER,
     p_path TEXT
-) RETURNS BOOLEAN AS $$
+) RETURNS BOOLEAN SET search_path = pggit, public AS $$
 DECLARE
     v_result BOOLEAN;
 BEGIN
@@ -54,7 +54,7 @@ BEGIN
                    replace(pattern, '!', ''),
                    '*', '%'
                ) as matches
-        FROM pg_git.sparse_patterns
+        FROM pggit.sparse_patterns
         WHERE repo_id = p_repo_id
         ORDER BY is_negative, length(pattern) DESC
     )
@@ -76,13 +76,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Override tree functions to respect sparse checkout
-CREATE OR REPLACE FUNCTION pg_git.get_tree_files(
+CREATE OR REPLACE FUNCTION pggit.get_tree_files(
     p_repo_id INTEGER,
     p_tree_hash TEXT
 ) RETURNS TABLE (
     path TEXT,
     blob_hash TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 BEGIN
     RETURN QUERY
     WITH RECURSIVE tree_files AS (
@@ -106,6 +106,6 @@ BEGIN
     SELECT tf.path, tf.hash
     FROM tree_files tf
     WHERE tf.type = 'blob'
-    AND pg_git.is_path_in_sparse_checkout(p_repo_id, tf.path);
+    AND pggit.is_path_in_sparse_checkout(p_repo_id, tf.path);
 END;
 $$ LANGUAGE plpgsql;

@@ -2,10 +2,10 @@
 -- Additional Git commands and utilities
 
 -- Cherry-pick implementation
-CREATE OR REPLACE FUNCTION pg_git.cherry_pick(
+CREATE OR REPLACE FUNCTION pggit.cherry_pick(
     p_repo_id INTEGER,
     p_commit_hash TEXT
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_tree_hash TEXT;
     v_new_commit TEXT;
@@ -18,7 +18,7 @@ BEGIN
     FROM commits WHERE hash = p_commit_hash;
     
     -- Create new commit with same tree
-    v_new_commit := pg_git.create_commit(
+    v_new_commit := pggit.create_commit(
         p_repo_id,
         v_tree_hash,
         (SELECT commit_hash FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD'),
@@ -36,10 +36,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Revert implementation
-CREATE OR REPLACE FUNCTION pg_git.revert(
+CREATE OR REPLACE FUNCTION pggit.revert(
     p_repo_id INTEGER,
     p_commit_hash TEXT
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_parent_tree TEXT;
     v_commit_tree TEXT;
@@ -55,10 +55,10 @@ BEGIN
     WHERE c.repo_id = p_repo_id AND hash = p_commit_hash;
     
     -- Create inverse diff
-    v_new_tree := pg_git.apply_inverse_diff(v_parent_tree, v_commit_tree);
+    v_new_tree := pggit.apply_inverse_diff(v_parent_tree, v_commit_tree);
     
     -- Create revert commit
-    v_new_commit := pg_git.create_commit(
+    v_new_commit := pggit.create_commit(
         p_repo_id,
         v_new_tree,
         (SELECT commit_hash FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD'),
@@ -76,7 +76,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Bisect implementation
-CREATE TABLE pg_git.bisect_state (
+CREATE TABLE pggit.bisect_state (
     repo_id INTEGER REFERENCES repositories(id),
     start_commit TEXT NOT NULL,
     good_commits TEXT[] DEFAULT ARRAY[]::TEXT[],
@@ -85,16 +85,16 @@ CREATE TABLE pg_git.bisect_state (
     PRIMARY KEY (repo_id)
 );
 
-CREATE OR REPLACE FUNCTION pg_git.bisect_start(
+CREATE OR REPLACE FUNCTION pggit.bisect_start(
     p_repo_id INTEGER,
     p_bad_commit TEXT,
     p_good_commit TEXT
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_mid_commit TEXT;
 BEGIN
     -- Initialize bisect state
-    INSERT INTO pg_git.bisect_state (repo_id, start_commit, good_commits, bad_commits)
+    INSERT INTO pggit.bisect_state (repo_id, start_commit, good_commits, bad_commits)
     VALUES (p_repo_id, p_bad_commit, ARRAY[p_good_commit], ARRAY[p_bad_commit])
     ON CONFLICT (repo_id) DO UPDATE
     SET start_commit = p_bad_commit,
@@ -106,12 +106,12 @@ BEGIN
     FROM (
         SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
                COUNT(*) OVER () as total
-        FROM pg_git.rev_list(p_bad_commit, ARRAY[p_good_commit])
+        FROM pggit.rev_list(p_bad_commit, ARRAY[p_good_commit])
     ) commits
     WHERE rn = total/2;
     
     -- Update current commit
-    UPDATE pg_git.bisect_state
+    UPDATE pggit.bisect_state
     SET current_commit = v_mid_commit
     WHERE repo_id = p_repo_id;
     
@@ -119,20 +119,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.bisect_good(
+CREATE OR REPLACE FUNCTION pggit.bisect_good(
     p_repo_id INTEGER
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_current TEXT;
     v_next TEXT;
 BEGIN
     -- Get current state
     SELECT current_commit INTO v_current
-    FROM pg_git.bisect_state
+    FROM pggit.bisect_state
     WHERE repo_id = p_repo_id;
     
     -- Add to good commits
-    UPDATE pg_git.bisect_state
+    UPDATE pggit.bisect_state
     SET good_commits = array_append(good_commits, v_current)
     WHERE repo_id = p_repo_id;
     
@@ -141,15 +141,15 @@ BEGIN
     FROM (
         SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
                COUNT(*) OVER () as total
-        FROM pg_git.rev_list(
-            (SELECT bad_commits[1] FROM pg_git.bisect_state WHERE repo_id = p_repo_id),
-            (SELECT good_commits FROM pg_git.bisect_state WHERE repo_id = p_repo_id)
+        FROM pggit.rev_list(
+            (SELECT bad_commits[1] FROM pggit.bisect_state WHERE repo_id = p_repo_id),
+            (SELECT good_commits FROM pggit.bisect_state WHERE repo_id = p_repo_id)
         )
     ) commits
     WHERE rn = total/2;
     
     -- Update current commit
-    UPDATE pg_git.bisect_state
+    UPDATE pggit.bisect_state
     SET current_commit = v_next
     WHERE repo_id = p_repo_id;
     
@@ -157,20 +157,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.bisect_bad(
+CREATE OR REPLACE FUNCTION pggit.bisect_bad(
     p_repo_id INTEGER
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_current TEXT;
     v_next TEXT;
 BEGIN
     -- Get current state
     SELECT current_commit INTO v_current
-    FROM pg_git.bisect_state
+    FROM pggit.bisect_state
     WHERE repo_id = p_repo_id;
     
     -- Add to bad commits
-    UPDATE pg_git.bisect_state
+    UPDATE pggit.bisect_state
     SET bad_commits = array_append(bad_commits, v_current)
     WHERE repo_id = p_repo_id;
     
@@ -179,15 +179,15 @@ BEGIN
     FROM (
         SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
                COUNT(*) OVER () as total
-        FROM pg_git.rev_list(
-            (SELECT bad_commits[1] FROM pg_git.bisect_state WHERE repo_id = p_repo_id),
-            (SELECT good_commits FROM pg_git.bisect_state WHERE repo_id = p_repo_id)
+        FROM pggit.rev_list(
+            (SELECT bad_commits[1] FROM pggit.bisect_state WHERE repo_id = p_repo_id),
+            (SELECT good_commits FROM pggit.bisect_state WHERE repo_id = p_repo_id)
         )
     ) commits
     WHERE rn = total/2;
     
     -- Update current commit
-    UPDATE pg_git.bisect_state
+    UPDATE pggit.bisect_state
     SET current_commit = v_next
     WHERE repo_id = p_repo_id;
     
@@ -195,17 +195,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.bisect_reset(
+CREATE OR REPLACE FUNCTION pggit.bisect_reset(
     p_repo_id INTEGER
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
-    DELETE FROM pg_git.bisect_state
+    DELETE FROM pggit.bisect_state
     WHERE repo_id = p_repo_id;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Grep implementation
-CREATE OR REPLACE FUNCTION pg_git.grep(
+CREATE OR REPLACE FUNCTION pggit.grep(
     p_repo_id INTEGER,
     p_pattern TEXT,
     p_commit TEXT DEFAULT 'HEAD',
@@ -214,7 +214,7 @@ CREATE OR REPLACE FUNCTION pg_git.grep(
     file_path TEXT,
     line_number INTEGER,
     line_content TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 DECLARE
     v_commit_hash TEXT;
 BEGIN
@@ -237,7 +237,7 @@ BEGIN
     )
     SELECT f.path,
            s.line_number,
-           s.line_content
+           s.lines[s.line_number]
     FROM files f,
     LATERAL (
         SELECT generate_subscripts(regexp_split_to_array(encode(f.content, 'escape'), E'\n'), 1) as line_number,

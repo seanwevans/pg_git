@@ -1,8 +1,8 @@
 -- Path: /sql/functions/014-https.sql
 -- pg_git HTTPS transport
 
-CREATE TABLE pg_git.credentials (
-    repo_id INTEGER REFERENCES pg_git.repositories(id),
+CREATE TABLE pggit.credentials (
+    repo_id INTEGER REFERENCES pggit.repositories(id),
     host TEXT NOT NULL,
     username TEXT NOT NULL,
     password BYTEA NOT NULL,
@@ -10,16 +10,16 @@ CREATE TABLE pg_git.credentials (
     PRIMARY KEY (repo_id, host)
 );
 
-CREATE OR REPLACE FUNCTION pg_git.store_credentials(
+CREATE OR REPLACE FUNCTION pggit.store_credentials(
     p_repo_id INTEGER,
     p_host TEXT,
     p_username TEXT,
     p_password TEXT
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 DECLARE
-    v_key TEXT := current_setting('pg_git.credential_key', true);
+    v_key TEXT := current_setting('pggit.credential_key', true);
 BEGIN
-    INSERT INTO pg_git.credentials (repo_id, host, username, password)
+    INSERT INTO pggit.credentials (repo_id, host, username, password)
     VALUES (
         p_repo_id,
         p_host,
@@ -32,21 +32,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.http_fetch(
+CREATE OR REPLACE FUNCTION pggit.http_fetch(
     p_repo_id INTEGER,
     p_url TEXT
-) RETURNS BYTEA AS $$import base64
+) RETURNS BYTEA SET search_path = pggit, public AS $$import base64
 import ssl
 from urllib.parse import urlparse
 import urllib.request
 import urllib.error
 
 host = urlparse(p_url).hostname
-key = plpy.execute("SELECT current_setting('pg_git.credential_key', true) AS k")[0]['k'] or 'pg_git_default_key'
-cred = plpy.execute(
-    "SELECT username, pgp_sym_decrypt(password, $1) AS pw FROM pg_git.credentials WHERE repo_id = $2 AND host = $3",
-    [key, p_repo_id, host]
+key = plpy.execute("SELECT current_setting('pggit.credential_key', true) AS k")[0]['k'] or 'pg_git_default_key'
+# Parameterized queries require a prepared plan; plpy.execute(query, x) treats x
+# as a row limit, not bind parameters.
+cred_plan = plpy.prepare(
+    "SELECT username, pgp_sym_decrypt(password, $1) AS pw FROM pggit.credentials WHERE repo_id = $2 AND host = $3",
+    ["text", "integer", "text"]
 )
+cred = plpy.execute(cred_plan, [key, p_repo_id, host])
 
 context = ssl.create_default_context()
 

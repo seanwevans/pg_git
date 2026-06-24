@@ -1,7 +1,7 @@
 -- Path: /sql/functions/026-verify-tag.sql
 -- Tag verification with GPG
 
-CREATE TABLE pg_git.tag_signatures (
+CREATE TABLE pggit.tag_signatures (
     repo_id INTEGER REFERENCES repositories(id),
     tag_name TEXT NOT NULL,
     key_id TEXT NOT NULL,
@@ -9,24 +9,24 @@ CREATE TABLE pg_git.tag_signatures (
     signed_data TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (repo_id, tag_name),
-    FOREIGN KEY (repo_id, key_id) REFERENCES pg_git.gpg_keys(repo_id, key_id)
+    FOREIGN KEY (repo_id, key_id) REFERENCES pggit.gpg_keys(repo_id, key_id)
 );
 
-CREATE OR REPLACE FUNCTION pg_git.sign_tag(
+CREATE OR REPLACE FUNCTION pggit.sign_tag(
     p_repo_id INTEGER,
     p_tag_name TEXT,
     p_key_id TEXT,
     p_signature TEXT
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 DECLARE
     v_signed_data TEXT;
 BEGIN
     -- Construct signed data from tag
     SELECT target_hash || tagger || message INTO v_signed_data
-    FROM pg_git.tags
+    FROM pggit.tags
     WHERE repo_id = p_repo_id AND name = p_tag_name;
 
-    INSERT INTO pg_git.tag_signatures (
+    INSERT INTO pggit.tag_signatures (
         repo_id, tag_name, key_id, signature, signed_data
     ) VALUES (
         p_repo_id, p_tag_name, p_key_id, p_signature, v_signed_data
@@ -34,7 +34,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.verify_tag(
+CREATE OR REPLACE FUNCTION pggit.verify_tag(
     p_repo_id INTEGER,
     p_tag_name TEXT,
     p_require_trust_level TEXT DEFAULT NULL
@@ -44,14 +44,14 @@ CREATE OR REPLACE FUNCTION pg_git.verify_tag(
     user_id TEXT,
     trust_level TEXT,
     verification_message TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 DECLARE
     v_signature RECORD;
     v_key RECORD;
 BEGIN
     -- Get signature info
     SELECT * INTO v_signature
-    FROM pg_git.tag_signatures
+    FROM pggit.tag_signatures
     WHERE repo_id = p_repo_id
     AND tag_name = p_tag_name;
 
@@ -63,7 +63,7 @@ BEGIN
 
     -- Get key info
     SELECT * INTO v_key
-    FROM pg_git.gpg_keys
+    FROM pggit.gpg_keys
     WHERE repo_id = p_repo_id
     AND key_id = v_signature.key_id;
 
@@ -84,19 +84,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.verify_all_tags(
+CREATE OR REPLACE FUNCTION pggit.verify_all_tags(
     p_repo_id INTEGER,
     p_require_trust_level TEXT DEFAULT NULL
 ) RETURNS TABLE (
     tag_name TEXT,
     is_valid BOOLEAN,
     verification_message TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
     SELECT t.name,
            v.is_valid,
            v.verification_message
-    FROM pg_git.tags t
-    LEFT JOIN LATERAL pg_git.verify_tag(p_repo_id, t.name, p_require_trust_level) v ON TRUE
+    FROM pggit.tags t
+    LEFT JOIN LATERAL pggit.verify_tag(p_repo_id, t.name, p_require_trust_level) v ON TRUE
     WHERE t.repo_id = p_repo_id
     ORDER BY t.name;
 $$ LANGUAGE sql;

@@ -6,56 +6,57 @@ BEGIN;
 SELECT plan(8);
 
 -- Setup test repository with initial commit
-SELECT pg_git.init_repository('test_repo', '/test/path') AS repo_id \gset
-SELECT pg_git.stage_file(:repo_id, 'test.txt', 'test content'::bytea);
-SELECT pg_git.commit_index(:repo_id, 'test_author', 'test commit');
+SELECT pggit.init_repository('test_repo', '/test/path') AS repo_id \gset
+SELECT set_config('vars.repo_id', :'repo_id', false);
+SELECT pggit.stage_file((current_setting('vars.repo_id')::int), 'test.txt', 'test content'::bytea);
+SELECT pggit.commit_index((current_setting('vars.repo_id')::int), 'test_author', 'test commit');
 
 -- Test branch creation
 SELECT lives_ok(
-    $$SELECT pg_git.create_branch(:repo_id, 'test-branch')$$,
+    $$SELECT pggit.create_branch((current_setting('vars.repo_id')::int), 'test-branch')$$,
     'Can create branch'
 );
 
 SELECT results_eq(
-    $$SELECT name FROM pg_git.list_branches(:repo_id)$$,
+    $$SELECT name FROM pggit.list_branches((current_setting('vars.repo_id')::int))$$,
     $$VALUES ('master'), ('test-branch')$$,
     'Branch list shows all branches'
 );
 
 -- Test checkout
 SELECT lives_ok(
-    $$SELECT pg_git.checkout_branch(:repo_id, 'test-branch')$$,
+    $$SELECT pggit.checkout_branch((current_setting('vars.repo_id')::int), 'test-branch')$$,
     'Can checkout branch'
 );
 
 SELECT results_eq(
-    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'HEAD'$$,
-    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'test-branch'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'HEAD'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'test-branch'$$,
     'HEAD points to correct commit after checkout'
 );
 
 -- Test new branch with start point
 SELECT lives_ok(
-    $$SELECT pg_git.create_branch(:repo_id, 'feature-branch', 
-        (SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'master'))$$,
+    $$SELECT pggit.create_branch((current_setting('vars.repo_id')::int), 'feature-branch', 
+        (SELECT commit_hash FROM refs WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'master'))$$,
     'Can create branch from specific commit'
 );
 
 SELECT results_eq(
-    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'feature-branch'$$,
-    $$SELECT commit_hash FROM refs WHERE repo_id = :repo_id AND name = 'master'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'feature-branch'$$,
+    $$SELECT commit_hash FROM refs WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'master'$$,
     'Branch created at correct commit'
 );
 
 -- Test checkout with create
 SELECT lives_ok(
-    $$SELECT pg_git.checkout_branch(:repo_id, 'new-branch', TRUE)$$,
+    $$SELECT pggit.checkout_branch((current_setting('vars.repo_id')::int), 'new-branch', TRUE)$$,
     'Can checkout with branch creation'
 );
 
 SELECT results_eq(
-    $$SELECT name FROM pg_git.list_branches(:repo_id)$$,
-    $$VALUES ('master'), ('test-branch'), ('feature-branch'), ('new-branch')$$,
+    $$SELECT name FROM pggit.list_branches((current_setting('vars.repo_id')::int))$$,
+    $$VALUES ('feature-branch'), ('master'), ('new-branch'), ('test-branch')$$,
     'New branch created and listed'
 );
 

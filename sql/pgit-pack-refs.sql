@@ -1,32 +1,35 @@
 -- Path: /sql/functions/029-pack-refs.sql
 -- Pack refs for efficient repository access
 
-CREATE TABLE pg_git.packed_refs (
+CREATE TABLE pggit.packed_refs (
     repo_id INTEGER REFERENCES repositories(id),
     ref_name TEXT NOT NULL,
-    commit_hash TEXT NOT NULL REFERENCES commits(hash),
-    peeled_hash TEXT REFERENCES commits(hash),
+    commit_hash TEXT NOT NULL,
+    peeled_hash TEXT,
     packed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (repo_id, ref_name)
+    PRIMARY KEY (repo_id, ref_name),
+    FOREIGN KEY (repo_id, commit_hash) REFERENCES pggit.commits(repo_id, hash),
+    FOREIGN KEY (repo_id, peeled_hash) REFERENCES pggit.commits(repo_id, hash)
 );
 
-CREATE OR REPLACE FUNCTION pg_git.pack_refs(
+CREATE OR REPLACE FUNCTION pggit.pack_refs(
     p_repo_id INTEGER,
     p_all BOOLEAN DEFAULT FALSE
-) RETURNS INTEGER AS $$
+) RETURNS INTEGER SET search_path = pggit, public AS $$
 DECLARE
     v_count INTEGER;
 BEGIN
     -- Pack all refs or just frequently accessed ones
-    INSERT INTO pg_git.packed_refs (repo_id, ref_name, commit_hash, peeled_hash)
+    INSERT INTO pggit.packed_refs (repo_id, ref_name, commit_hash, peeled_hash)
     SELECT r.repo_id, r.name, r.commit_hash,
            CASE 
                WHEN t.target_hash IS NOT NULL THEN t.target_hash
                ELSE NULL
            END
     FROM refs r
-    LEFT JOIN pg_git.tags t ON r.commit_hash = t.target_hash
+    LEFT JOIN pggit.tags t ON r.commit_hash = t.target_hash
     WHERE r.repo_id = p_repo_id
+    AND r.name <> 'HEAD'
     AND (p_all OR r.name IN (
         SELECT name 
         FROM refs 
@@ -44,14 +47,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.unpack_refs(
+CREATE OR REPLACE FUNCTION pggit.unpack_refs(
     p_repo_id INTEGER,
     p_ref_pattern TEXT DEFAULT NULL
-) RETURNS INTEGER AS $$
+) RETURNS INTEGER SET search_path = pggit, public AS $$
 DECLARE
     v_count INTEGER;
 BEGIN
-    DELETE FROM pg_git.packed_refs
+    DELETE FROM pggit.packed_refs
     WHERE repo_id = p_repo_id
     AND (p_ref_pattern IS NULL OR ref_name LIKE p_ref_pattern);
     
@@ -60,13 +63,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.verify_packed_refs(
+CREATE OR REPLACE FUNCTION pggit.verify_packed_refs(
     p_repo_id INTEGER
 ) RETURNS TABLE (
     ref_name TEXT,
     is_valid BOOLEAN,
     error_message TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 BEGIN
     RETURN QUERY
     SELECT pr.ref_name,
@@ -82,7 +85,7 @@ BEGIN
                     NOT EXISTS (SELECT 1 FROM commits WHERE hash = pr.peeled_hash) THEN 'Invalid peeled hash'
                ELSE 'Valid'
            END as error_message
-    FROM pg_git.packed_refs pr
+    FROM pggit.packed_refs pr
     JOIN refs r ON r.name = pr.ref_name
     WHERE pr.repo_id = p_repo_id;
 END;

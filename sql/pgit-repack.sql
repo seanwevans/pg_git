@@ -1,7 +1,7 @@
 -- Path: /sql/functions/030-repack.sql
 -- Repack objects for efficient storage
 
-CREATE TABLE pg_git.pack_files (
+CREATE TABLE pggit.pack_files (
     id SERIAL PRIMARY KEY,
     repo_id INTEGER REFERENCES repositories(id),
     pack_hash TEXT NOT NULL,
@@ -10,23 +10,23 @@ CREATE TABLE pg_git.pack_files (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE pg_git.packed_objects (
-    pack_id INTEGER REFERENCES pg_git.pack_files(id),
+CREATE TABLE pggit.packed_objects (
+    pack_id INTEGER REFERENCES pggit.pack_files(id),
     object_hash TEXT NOT NULL,
-    offset INTEGER NOT NULL,
+    "offset" INTEGER NOT NULL,
     size INTEGER NOT NULL,
     type TEXT NOT NULL,
     delta_base TEXT,
     PRIMARY KEY (pack_id, object_hash)
 );
 
-CREATE OR REPLACE FUNCTION pg_git.repack(
+CREATE OR REPLACE FUNCTION pggit.repack(
     p_repo_id INTEGER,
     p_aggressive BOOLEAN DEFAULT FALSE
 ) RETURNS TABLE (
     objects_packed INTEGER,
     space_saved BIGINT
-) AS $$
+) SET search_path = pggit, public AS $$
 DECLARE
     v_pack_id INTEGER;
     v_old_size BIGINT;
@@ -45,9 +45,9 @@ BEGIN
     ) objects;
 
     -- Create new pack
-    INSERT INTO pg_git.pack_files (repo_id, pack_hash, object_count, size_bytes)
+    INSERT INTO pggit.pack_files (repo_id, pack_hash, object_count, size_bytes)
     SELECT p_repo_id,
-           encode(sha256(string_agg(hash, '')), 'hex'),
+           encode(sha256(convert_to(string_agg(hash, ''), 'UTF8')), 'hex'),
            count(*),
            sum(
                CASE 
@@ -67,8 +67,8 @@ BEGIN
 
     -- Pack objects with delta compression if aggressive
     IF p_aggressive THEN
-        INSERT INTO pg_git.packed_objects (
-            pack_id, object_hash, offset, size, type, delta_base
+        INSERT INTO pggit.packed_objects (
+            pack_id, object_hash, "offset", size, type, delta_base
         )
         WITH object_analysis AS (
             SELECT hash,
@@ -80,7 +80,7 @@ BEGIN
                        WHEN content IS NOT NULL THEN content
                        ELSE entries::text::bytea
                    END as data,
-                   row_number() OVER (ORDER BY hash) as offset
+                   row_number() OVER (ORDER BY hash) as "offset"
             FROM (
                 SELECT hash, content, NULL::jsonb as entries 
                 FROM blobs
@@ -92,7 +92,7 @@ BEGIN
         delta_candidates AS (
             SELECT a1.hash as obj_hash,
                    a1.type,
-                   a1.offset,
+                   a1."offset",
                    octet_length(a1.data) as size,
                    a2.hash as base_hash
             FROM object_analysis a1
@@ -103,14 +103,14 @@ BEGIN
         )
         SELECT v_pack_id,
                obj_hash,
-               offset,
+               "offset",
                size,
                type,
                base_hash
         FROM delta_candidates;
     ELSE
-        INSERT INTO pg_git.packed_objects (
-            pack_id, object_hash, offset, size, type
+        INSERT INTO pggit.packed_objects (
+            pack_id, object_hash, "offset", size, type
         )
         SELECT v_pack_id,
                hash,
@@ -138,20 +138,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.unpack(
+CREATE OR REPLACE FUNCTION pggit.unpack(
     p_repo_id INTEGER,
     p_pack_id INTEGER DEFAULT NULL
-) RETURNS INTEGER AS $$
+) RETURNS INTEGER SET search_path = pggit, public AS $$
 DECLARE
     v_count INTEGER;
 BEGIN
-    DELETE FROM pg_git.packed_objects po
-    USING pg_git.pack_files pf
+    DELETE FROM pggit.packed_objects po
+    USING pggit.pack_files pf
     WHERE po.pack_id = pf.id
     AND pf.repo_id = p_repo_id
     AND (p_pack_id IS NULL OR pf.id = p_pack_id);
     
-    DELETE FROM pg_git.pack_files
+    DELETE FROM pggit.pack_files
     WHERE repo_id = p_repo_id
     AND (p_pack_id IS NULL OR id = p_pack_id);
     

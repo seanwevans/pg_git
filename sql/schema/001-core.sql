@@ -1,49 +1,59 @@
 -- Core tables
-CREATE TABLE pg_git.blobs (
-    repo_id INTEGER REFERENCES pg_git.repositories(id),
+CREATE TABLE pggit.repositories (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE pggit.blobs (
+    repo_id INTEGER REFERENCES pggit.repositories(id),
     hash TEXT,
     content BYTEA NOT NULL,
     PRIMARY KEY (repo_id, hash)
 );
 
-CREATE TABLE pg_git.trees (
-    repo_id INTEGER REFERENCES pg_git.repositories(id),
+CREATE TABLE pggit.trees (
+    repo_id INTEGER REFERENCES pggit.repositories(id),
     hash TEXT,
     entries JSONB NOT NULL,  -- [{mode, type, hash, name}]
     PRIMARY KEY (repo_id, hash)
 );
 
-CREATE TABLE pg_git.commits (
-    repo_id INTEGER REFERENCES pg_git.repositories(id),
+CREATE TABLE pggit.commits (
+    repo_id INTEGER REFERENCES pggit.repositories(id),
     hash TEXT,
     tree_hash TEXT NOT NULL,
     parent_hash TEXT,
     author TEXT NOT NULL,
     message TEXT NOT NULL,
-    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    -- clock_timestamp() (not CURRENT_TIMESTAMP) so commits created within a single
+    -- transaction receive distinct, monotonically increasing timestamps and can be
+    -- ordered relative to one another.
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT clock_timestamp(),
     PRIMARY KEY (repo_id, hash),
-    FOREIGN KEY (repo_id, tree_hash) REFERENCES pg_git.trees(repo_id, hash),
-    FOREIGN KEY (repo_id, parent_hash) REFERENCES pg_git.commits(repo_id, hash)
+    FOREIGN KEY (repo_id, tree_hash) REFERENCES pggit.trees(repo_id, hash),
+    FOREIGN KEY (repo_id, parent_hash) REFERENCES pggit.commits(repo_id, hash)
 );
 
-CREATE TABLE pg_git.refs (
-    repo_id INTEGER REFERENCES pg_git.repositories(id),
+CREATE TABLE pggit.refs (
+    repo_id INTEGER REFERENCES pggit.repositories(id),
     name TEXT,
     commit_hash TEXT NOT NULL,
     PRIMARY KEY (repo_id, name),
-    FOREIGN KEY (repo_id, commit_hash) REFERENCES pg_git.commits(repo_id, hash)
+    FOREIGN KEY (repo_id, commit_hash) REFERENCES pggit.commits(repo_id, hash)
 );
 
 -- Function to create a blob
 CREATE OR REPLACE FUNCTION create_blob(
     p_repo_id INTEGER,
     p_content BYTEA
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_hash TEXT;
 BEGIN
     v_hash := encode(sha256(p_content), 'hex');
-    INSERT INTO pg_git.blobs (repo_id, hash, content)
+    INSERT INTO pggit.blobs (repo_id, hash, content)
     VALUES (p_repo_id, v_hash, p_content)
     ON CONFLICT DO NOTHING;
     RETURN v_hash;
@@ -54,12 +64,12 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION create_tree(
     p_repo_id INTEGER,
     p_entries JSONB
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_hash TEXT;
 BEGIN
     v_hash := encode(sha256(p_entries::text::bytea), 'hex');
-    INSERT INTO pg_git.trees (repo_id, hash, entries)
+    INSERT INTO pggit.trees (repo_id, hash, entries)
     VALUES (p_repo_id, v_hash, p_entries)
     ON CONFLICT DO NOTHING;
     RETURN v_hash;
@@ -73,7 +83,7 @@ CREATE OR REPLACE FUNCTION create_commit(
     p_parent_hash TEXT,
     p_author TEXT,
     p_message TEXT
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_hash TEXT;
     v_commit_data TEXT;
@@ -91,7 +101,7 @@ BEGIN
         RAISE EXCEPTION 'Commit hash calculation returned NULL';
     END IF;
 
-    INSERT INTO pg_git.commits (repo_id, hash, tree_hash, parent_hash, author, message)
+    INSERT INTO pggit.commits (repo_id, hash, tree_hash, parent_hash, author, message)
     VALUES (p_repo_id, v_hash, p_tree_hash, p_parent_hash, p_author, p_message);
     
     RETURN v_hash;
@@ -103,9 +113,9 @@ CREATE OR REPLACE FUNCTION update_ref(
     p_repo_id INTEGER,
     p_name TEXT,
     p_commit_hash TEXT
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
-    INSERT INTO pg_git.refs (repo_id, name, commit_hash)
+    INSERT INTO pggit.refs (repo_id, name, commit_hash)
     VALUES (p_repo_id, p_name, p_commit_hash)
     ON CONFLICT (repo_id, name) DO UPDATE
     SET commit_hash = p_commit_hash;
@@ -122,19 +132,19 @@ CREATE OR REPLACE FUNCTION get_commit_history(
     parent_hash TEXT,
     author TEXT,
     message TEXT,
-    timestamp TIMESTAMP WITH TIME ZONE
-) AS $$
+    "timestamp" TIMESTAMP WITH TIME ZONE
+) SET search_path = pggit, public AS $$
 WITH RECURSIVE commit_history AS (
-    SELECT * FROM pg_git.commits WHERE repo_id = p_repo_id AND hash = p_start_commit
+    SELECT * FROM pggit.commits WHERE repo_id = p_repo_id AND hash = p_start_commit
     UNION ALL
     SELECT c.*
-    FROM pg_git.commits c
+    FROM pggit.commits c
     INNER JOIN commit_history ch ON c.repo_id = p_repo_id AND c.hash = ch.parent_hash
 )
-SELECT * FROM commit_history;
+SELECT hash, tree_hash, parent_hash, author, message, "timestamp" FROM commit_history;
 $$ LANGUAGE sql;
 
--- Function to diff two pg_git.trees
+-- Function to diff two pggit.trees
 CREATE OR REPLACE FUNCTION diff_trees(
     p_repo_id INTEGER,
     p_old_tree_hash TEXT,
@@ -144,14 +154,14 @@ CREATE OR REPLACE FUNCTION diff_trees(
     path TEXT,
     old_hash TEXT,
     new_hash TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 DECLARE
     v_old_entries JSONB;
     v_new_entries JSONB;
 BEGIN
     -- Get tree entries
-    SELECT entries INTO v_old_entries FROM pg_git.trees WHERE repo_id = p_repo_id AND hash = p_old_tree_hash;
-    SELECT entries INTO v_new_entries FROM pg_git.trees WHERE repo_id = p_repo_id AND hash = p_new_tree_hash;
+    SELECT entries INTO v_old_entries FROM pggit.trees WHERE repo_id = p_repo_id AND hash = p_old_tree_hash;
+    SELECT entries INTO v_new_entries FROM pggit.trees WHERE repo_id = p_repo_id AND hash = p_new_tree_hash;
     
     -- Added files
     RETURN QUERY

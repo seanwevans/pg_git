@@ -1,21 +1,14 @@
-CREATE TABLE pg_git.repositories (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    path TEXT NOT NULL UNIQUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE OR REPLACE FUNCTION init_repository(
     p_name TEXT,
     p_path TEXT
-) RETURNS INTEGER AS $$
+) RETURNS INTEGER SET search_path = pggit, public AS $$
 DECLARE
     v_repo_id INTEGER;
     v_initial_tree TEXT;
     v_initial_commit TEXT;
 BEGIN
     -- Create repository record
-    INSERT INTO pg_git.repositories (name, path)
+    INSERT INTO pggit.repositories (name, path)
     VALUES (p_name, p_path)
     RETURNING id INTO v_repo_id;
     

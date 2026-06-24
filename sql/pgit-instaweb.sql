@@ -1,7 +1,7 @@
 -- Path: /sql/functions/028-instaweb.sql
 -- Instaweb functionality for repository browsing
 
-CREATE TABLE pg_git.instaweb_config (
+CREATE TABLE pggit.instaweb_config (
     repo_id INTEGER REFERENCES repositories(id),
     port INTEGER NOT NULL DEFAULT 1234,
     host TEXT NOT NULL DEFAULT 'localhost',
@@ -11,7 +11,7 @@ CREATE TABLE pg_git.instaweb_config (
     PRIMARY KEY (repo_id)
 );
 
-CREATE TABLE pg_git.instaweb_users (
+CREATE TABLE pggit.instaweb_users (
     repo_id INTEGER REFERENCES repositories(id),
     username TEXT NOT NULL,
     password_hash TEXT NOT NULL,
@@ -20,19 +20,19 @@ CREATE TABLE pg_git.instaweb_users (
     PRIMARY KEY (repo_id, username)
 );
 
-CREATE TABLE pg_git.instaweb_sessions (
+CREATE TABLE pggit.instaweb_sessions (
     repo_id INTEGER REFERENCES repositories(id),
     session_id TEXT PRIMARY KEY,
     username TEXT NOT NULL,
     started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    FOREIGN KEY (repo_id, username) REFERENCES pg_git.instaweb_users(repo_id, username)
+    FOREIGN KEY (repo_id, username) REFERENCES pggit.instaweb_users(repo_id, username)
 );
 
 -- HTML Template for repository view
-CREATE OR REPLACE FUNCTION pg_git.get_instaweb_template(
+CREATE OR REPLACE FUNCTION pggit.get_instaweb_template(
     p_repo_id INTEGER
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 BEGIN
     RETURN '
 <!DOCTYPE html>
@@ -65,10 +65,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Generate repository view
-CREATE OR REPLACE FUNCTION pg_git.generate_repo_view(
+CREATE OR REPLACE FUNCTION pggit.generate_repo_view(
     p_repo_id INTEGER,
     p_ref TEXT DEFAULT 'HEAD'
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_template TEXT;
     v_content TEXT;
@@ -84,7 +84,7 @@ BEGIN
                c.message,
                c.author,
                c.timestamp
-        FROM pg_git.get_log(p_repo_id, 10) c
+        FROM pggit.get_log(p_repo_id, 10) c
     )
     SELECT string_agg(
         format(
@@ -104,7 +104,7 @@ BEGIN
     FROM commit_list;
 
     -- Get template and replace placeholders
-    v_template := pg_git.get_instaweb_template(p_repo_id);
+    v_template := pggit.get_instaweb_template(p_repo_id);
     v_template := replace(v_template, '{{repo_name}}', v_repo_name);
     v_template := replace(v_template, '{{content}}', v_content);
 
@@ -113,14 +113,14 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Start instaweb server
-CREATE OR REPLACE FUNCTION pg_git.start_instaweb(
+CREATE OR REPLACE FUNCTION pggit.start_instaweb(
     p_repo_id INTEGER,
     p_port INTEGER DEFAULT 1234,
     p_host TEXT DEFAULT 'localhost',
     p_auth_required BOOLEAN DEFAULT FALSE
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 BEGIN
-    INSERT INTO pg_git.instaweb_config (
+    INSERT INTO pggit.instaweb_config (
         repo_id, port, host, auth_required
     ) VALUES (
         p_repo_id, p_port, p_host, p_auth_required
@@ -137,15 +137,15 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Stop instaweb server
-CREATE OR REPLACE FUNCTION pg_git.stop_instaweb(
+CREATE OR REPLACE FUNCTION pggit.stop_instaweb(
     p_repo_id INTEGER
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
-    DELETE FROM pg_git.instaweb_config
+    DELETE FROM pggit.instaweb_config
     WHERE repo_id = p_repo_id;
     
     -- Clean up sessions
-    DELETE FROM pg_git.instaweb_sessions
+    DELETE FROM pggit.instaweb_sessions
     WHERE repo_id = p_repo_id;
 END;
 $$ LANGUAGE plpgsql;

@@ -3,7 +3,7 @@
 
 -- Helper function to normalize file paths and prevent traversal
 CREATE OR REPLACE FUNCTION normalize_path(p_path TEXT)
-RETURNS TEXT AS $$
+RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_parts TEXT[];
     v_stack TEXT[] := ARRAY[]::TEXT[];
@@ -11,7 +11,8 @@ DECLARE
 BEGIN
     -- Reject absolute paths
     IF p_path LIKE '/%' THEN
-        RAISE EXCEPTION 'Absolute paths are not allowed: %', p_path;
+        RAISE EXCEPTION 'Absolute paths are not allowed'
+            USING DETAIL = format('path: %s', p_path);
     END IF;
 
     -- Split and process path components
@@ -22,7 +23,8 @@ BEGIN
         ELSIF v_part = '..' THEN
             -- Prevent traversing above repository root
             IF array_length(v_stack, 1) IS NULL THEN
-                RAISE EXCEPTION 'Path traversal is not allowed: %', p_path;
+                RAISE EXCEPTION 'Path traversal is not allowed'
+                    USING DETAIL = format('path: %s', p_path);
             END IF;
             v_stack := v_stack[1:array_length(v_stack,1)-1];
         ELSE
@@ -40,7 +42,7 @@ CREATE OR REPLACE FUNCTION stage_file(
     p_path TEXT,
     p_content BYTEA,
     p_mode TEXT DEFAULT '100644'
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_blob_hash TEXT;
     v_norm_path TEXT;
@@ -65,7 +67,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION unstage_file(
     p_repo_id INTEGER,
     p_path TEXT
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 DECLARE
     v_norm_path TEXT;
 BEGIN

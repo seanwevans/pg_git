@@ -1,9 +1,9 @@
 -- Path: /sql/functions/003-commit.sql
 -- pg_git commit functions
 
-CREATE OR REPLACE FUNCTION pg_git.create_tree_from_index(
+CREATE OR REPLACE FUNCTION pggit.create_tree_from_index(
     p_repo_id INTEGER
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_entries JSONB;
 BEGIN
@@ -22,15 +22,15 @@ BEGIN
         ORDER BY path
     ) ordered_entries;
 
-    RETURN pg_git.create_tree(p_repo_id, COALESCE(v_entries, '[]'::jsonb));
+    RETURN pggit.create_tree(p_repo_id, COALESCE(v_entries, '[]'::jsonb));
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.commit_index(
+CREATE OR REPLACE FUNCTION pggit.commit_index(
     p_repo_id INTEGER,
     p_author TEXT,
     p_message TEXT
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_tree_hash TEXT;
     v_parent_hash TEXT;
@@ -38,14 +38,14 @@ DECLARE
 BEGIN
     -- Get current HEAD
     SELECT commit_hash INTO v_parent_hash
-    FROM pg_git.refs
+    FROM pggit.refs
     WHERE repo_id = p_repo_id AND name = 'HEAD';
 
     -- Create tree from index
-    v_tree_hash := pg_git.create_tree_from_index(p_repo_id);
+    v_tree_hash := pggit.create_tree_from_index(p_repo_id);
 
     -- Create commit
-    v_commit_hash := pg_git.create_commit(
+    v_commit_hash := pggit.create_commit(
         p_repo_id,
         v_tree_hash,
         v_parent_hash,
@@ -54,8 +54,8 @@ BEGIN
     );
 
     -- Update HEAD and branch reference
-    UPDATE pg_git.refs SET commit_hash = v_commit_hash WHERE repo_id = p_repo_id AND name = 'HEAD';
-    UPDATE pg_git.refs
+    UPDATE pggit.refs SET commit_hash = v_commit_hash WHERE repo_id = p_repo_id AND name = 'HEAD';
+    UPDATE pggit.refs
     SET commit_hash = v_commit_hash
     WHERE repo_id = p_repo_id
       AND commit_hash = v_parent_hash

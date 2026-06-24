@@ -1,21 +1,22 @@
 -- Path: /sql/functions/023-rerere.sql
 -- Reuse recorded resolution
 
-CREATE TABLE pg_git.rerere_cache (
+CREATE TABLE pggit.rerere_cache (
     repo_id INTEGER REFERENCES repositories(id),
     conflict_hash TEXT NOT NULL,
     path TEXT NOT NULL,
-    resolution_blob_hash TEXT REFERENCES blobs(hash),
+    resolution_blob_hash TEXT,
     recorded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     used_count INTEGER DEFAULT 0,
     last_used TIMESTAMP WITH TIME ZONE,
-    PRIMARY KEY (repo_id, conflict_hash, path)
+    PRIMARY KEY (repo_id, conflict_hash, path),
+    FOREIGN KEY (repo_id, resolution_blob_hash) REFERENCES pggit.blobs(repo_id, hash)
 );
 
-CREATE OR REPLACE FUNCTION pg_git.hash_conflict(
+CREATE OR REPLACE FUNCTION pggit.hash_conflict(
     p_our_blob TEXT,
     p_their_blob TEXT
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
     SELECT encode(sha256(
         COALESCE(o.content, ''::BYTEA) || 
         COALESCE(t.content, ''::BYTEA)
@@ -26,19 +27,19 @@ CREATE OR REPLACE FUNCTION pg_git.hash_conflict(
     AND t.hash = p_their_blob;
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION pg_git.record_resolution(
+CREATE OR REPLACE FUNCTION pggit.record_resolution(
     p_repo_id INTEGER,
     p_path TEXT,
     p_our_blob TEXT,
     p_their_blob TEXT,
     p_resolution_blob TEXT
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 DECLARE
     v_conflict_hash TEXT;
 BEGIN
-    v_conflict_hash := pg_git.hash_conflict(p_our_blob, p_their_blob);
+    v_conflict_hash := pggit.hash_conflict(p_our_blob, p_their_blob);
     
-    INSERT INTO pg_git.rerere_cache (
+    INSERT INTO pggit.rerere_cache (
         repo_id, conflict_hash, path, resolution_blob_hash
     ) VALUES (
         p_repo_id, v_conflict_hash, p_path, p_resolution_blob
@@ -50,19 +51,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.find_resolution(
+CREATE OR REPLACE FUNCTION pggit.find_resolution(
     p_repo_id INTEGER,
     p_path TEXT,
     p_our_blob TEXT,
     p_their_blob TEXT
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_conflict_hash TEXT;
     v_resolution_hash TEXT;
 BEGIN
-    v_conflict_hash := pg_git.hash_conflict(p_our_blob, p_their_blob);
+    v_conflict_hash := pggit.hash_conflict(p_our_blob, p_their_blob);
     
-    UPDATE pg_git.rerere_cache
+    UPDATE pggit.rerere_cache
     SET used_count = used_count + 1,
         last_used = CURRENT_TIMESTAMP
     WHERE repo_id = p_repo_id
@@ -74,11 +75,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.clear_rerere_cache(
+CREATE OR REPLACE FUNCTION pggit.clear_rerere_cache(
     p_repo_id INTEGER,
     p_older_than INTERVAL DEFAULT NULL
-) RETURNS INTEGER AS $$
-    DELETE FROM pg_git.rerere_cache
+) RETURNS INTEGER SET search_path = pggit, public AS $$
+    DELETE FROM pggit.rerere_cache
     WHERE repo_id = p_repo_id
     AND (
         p_older_than IS NULL OR

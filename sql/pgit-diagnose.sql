@@ -1,7 +1,7 @@
 -- Path: /sql/functions/024-diagnose.sql
 -- Diagnostic information collection
 
-CREATE TABLE pg_git.diagnostic_reports (
+CREATE TABLE pggit.diagnostic_reports (
     id SERIAL PRIMARY KEY,
     repo_id INTEGER REFERENCES repositories(id),
     report_type TEXT NOT NULL,
@@ -9,9 +9,9 @@ CREATE TABLE pg_git.diagnostic_reports (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE OR REPLACE FUNCTION pg_git.collect_diagnostics(
+CREATE OR REPLACE FUNCTION pggit.collect_diagnostics(
     p_repo_id INTEGER
-) RETURNS INTEGER AS $$
+) RETURNS INTEGER SET search_path = pggit, public AS $$
 DECLARE
     v_report_id INTEGER;
     v_report_data JSONB;
@@ -43,7 +43,7 @@ BEGIN
     -- Collect error info
     error_info AS (
         SELECT status, count(*) as count
-        FROM pg_git.verify_integrity(p_repo_id)
+        FROM pggit.verify_integrity(p_repo_id)
         GROUP BY status
     )
     SELECT jsonb_build_object(
@@ -53,7 +53,7 @@ BEGIN
         'errors', jsonb_agg(to_jsonb(error_info)),
         'configs', (
             SELECT jsonb_object_agg(key, value)
-            FROM pg_git.config
+            FROM pggit.config
             WHERE repo_id = p_repo_id
         )
     )
@@ -61,7 +61,7 @@ BEGIN
     FROM repo_info, size_info, perf_metrics, error_info;
 
     -- Store report
-    INSERT INTO pg_git.diagnostic_reports (repo_id, report_type, report_data)
+    INSERT INTO pggit.diagnostic_reports (repo_id, report_type, report_data)
     VALUES (p_repo_id, 'full', v_report_data)
     RETURNING id INTO v_report_id;
 
@@ -69,17 +69,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.get_diagnostic_report(
+CREATE OR REPLACE FUNCTION pggit.get_diagnostic_report(
     p_report_id INTEGER
 ) RETURNS TABLE (
     section TEXT,
     content TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 BEGIN
     RETURN QUERY
     WITH report AS (
         SELECT report_data
-        FROM pg_git.diagnostic_reports
+        FROM pggit.diagnostic_reports
         WHERE id = p_report_id
     )
     SELECT 'Repository Info' as section,
