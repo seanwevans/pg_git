@@ -1,6 +1,6 @@
 comment = 'Git implementation in PostgreSQL'
 default_version = '0.4.0'
-schema = pg_git
-relocatable = true
+schema = pggit
+relocatable = false
 requires = 'plpgsql,pgcrypto,pg_trgm,plpython3u'
 

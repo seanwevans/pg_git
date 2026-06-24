@@ -16,18 +16,40 @@ PGUSER ?= postgres
 # Shared psql command for test/preflight checks.
 PSQL := psql -v ON_ERROR_STOP=1 -X -w -h $(PGHOST) -p $(PGPORT) -U $(PGUSER) -d $(PGDATABASE)
 
-# Shared pg_prove command honoring connection defaults/overrides.
-PG_PROVE := PGHOST=$(PGHOST) PGPORT=$(PGPORT) PGUSER=$(PGUSER) PGDATABASE=$(PGDATABASE) pg_prove
+# Shared pg_prove command honoring connection defaults/overrides. The extension
+# installs into the pggit schema; tests reference its objects unqualified, so the
+# session search_path includes pggit (public keeps pgtap and contrib visible).
+# Tests that must prove search_path independence override this with SET LOCAL.
+PG_PROVE := PGHOST=$(PGHOST) PGPORT=$(PGPORT) PGUSER=$(PGUSER) PGDATABASE=$(PGDATABASE) PGOPTIONS='-c search_path=pggit,public' pg_prove
 
-# Installable SQL assets only:
-#   - extension install/upgrade entrypoints in sql/*.sql
-#   - schema/function fragments loaded by those entrypoints
-# Explicitly exclude non-extension artifacts accidentally placed in sql/.
-DATA = \
-       $(sort $(filter-out sql/pgit-ci.sql sql/pgit-control.sql, \
-       $(wildcard sql/*.sql))) \
-       $(wildcard sql/schema/*.sql) \
-       $(wildcard sql/functions/*.sql)
+# Single-file install entrypoint loaded by CREATE EXTENSION. Because the
+# CREATE EXTENSION machinery cannot process psql \i/\ir includes, this script
+# is assembled from the modular SQL fragments below (see the rule near the end
+# of this file). It is a generated artifact: edit the fragments, not this file.
+EXT_SQL = sql/$(EXTENSION)--$(EXTVERSION).sql
+
+# Fragments composing the install script, in load order:
+#   1. schema    - base tables (repositories must precede its referencing tables)
+#   2. functions - callable API, numbered to fix ordering
+#   3. features  - advanced command modules
+# CI/control fragments and version-upgrade scripts are intentionally excluded
+# from a fresh install.
+SCHEMA_PARTS = \
+       sql/schema/001-core.sql \
+       sql/schema/pgit-schema.sql
+FUNCTION_PARTS = $(sort $(wildcard sql/functions/*.sql))
+FEATURE_PARTS = $(sort $(filter-out \
+       sql/pgit-ci.sql \
+       sql/pgit-control.sql \
+       sql/pgit-update.sql \
+       sql/pgit-version.sql \
+       sql/pgit-version-updates.sql \
+       sql/pgit-version-updates-0.2.0--0.3.0.sql, \
+       $(wildcard sql/pgit-*.sql)))
+INSTALL_PARTS = $(SCHEMA_PARTS) $(FUNCTION_PARTS) $(FEATURE_PARTS)
+
+# Only the assembled entrypoint is installed into the extension directory.
+DATA = $(EXT_SQL)
 
 # Deterministic, fast SQL tests that run on every change.
 CORE_TESTS := \
@@ -62,6 +84,23 @@ include $(PGXS)
 else
 $(warning PGXS makefile not found at $(PGXS); build/install targets are unavailable in this environment.)
 endif
+
+# Assemble the single-file install script from the modular fragments. Plain
+# concatenation in dependency order; the fragments contain no psql meta-commands.
+$(EXT_SQL): $(INSTALL_PARTS)
+	@printf '%s\n' \
+	  '-- pg_git $(EXTVERSION)' \
+	  '-- GENERATED FILE -- DO NOT EDIT.' \
+	  '-- Assembled from sql/schema/*.sql, sql/functions/*.sql and sql/pgit-*.sql.' \
+	  '-- Regenerate with: make $(EXT_SQL)' > $@
+	@for f in $(INSTALL_PARTS); do \
+	  printf '\n-- ===== %s =====\n' "$$f" >> $@; \
+	  cat "$$f" >> $@; \
+	done
+	@echo "Generated $@ from $(words $(INSTALL_PARTS)) fragments."
+
+# Ensure the entrypoint is (re)assembled as part of the default build.
+all: $(EXT_SQL)
 
 .PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose check-pg_prove
 

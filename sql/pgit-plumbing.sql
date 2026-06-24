@@ -1,7 +1,7 @@
 -- Path: /sql/functions/017-plumbing.sql
 -- Git plumbing commands implementation
 
-CREATE OR REPLACE FUNCTION pg_git.cat_file(
+CREATE OR REPLACE FUNCTION pggit.cat_file(
     p_repo_id INTEGER,
     p_hash TEXT,
     p_type TEXT DEFAULT NULL
@@ -9,7 +9,7 @@ CREATE OR REPLACE FUNCTION pg_git.cat_file(
     object_type TEXT,
     size BIGINT,
     content TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 BEGIN
     -- Try blobs
     RETURN QUERY
@@ -41,24 +41,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.hash_object(
+CREATE OR REPLACE FUNCTION pggit.hash_object(
     p_repo_id INTEGER,
     p_content BYTEA,
     p_type TEXT DEFAULT 'blob'
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 BEGIN
     CASE p_type
         WHEN 'blob' THEN
-            RETURN pg_git.create_blob(p_repo_id, p_content);
+            RETURN pggit.create_blob(p_repo_id, p_content);
         WHEN 'tree' THEN
-            RETURN pg_git.create_tree(p_repo_id, p_content::TEXT::jsonb);
+            RETURN pggit.create_tree(p_repo_id, p_content::TEXT::jsonb);
         ELSE
             RAISE EXCEPTION 'Unsupported object type: %', p_type;
     END CASE;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.ls_tree(
+CREATE OR REPLACE FUNCTION pggit.ls_tree(
     p_repo_id INTEGER,
     p_tree_hash TEXT,
     p_recursive BOOLEAN DEFAULT FALSE
@@ -67,7 +67,7 @@ CREATE OR REPLACE FUNCTION pg_git.ls_tree(
     type TEXT,
     hash TEXT,
     path TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 BEGIN
     IF NOT p_recursive THEN
         RETURN QUERY
@@ -112,23 +112,23 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.merge_base(
+CREATE OR REPLACE FUNCTION pggit.merge_base(
     p_repo_id INTEGER,
     p_commit1 TEXT,
     p_commit2 TEXT
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
     -- Reuse existing merge base finding function
-    SELECT pg_git.find_merge_base(p_repo_id, p_commit1, p_commit2);
+    SELECT pggit.find_merge_base(p_repo_id, p_commit1, p_commit2);
 $$ LANGUAGE sql;
 
-CREATE OR REPLACE FUNCTION pg_git.rev_list(
+CREATE OR REPLACE FUNCTION pggit.rev_list(
     p_repo_id INTEGER,
     p_start_commit TEXT,
     p_exclude_commits TEXT[] DEFAULT ARRAY[]::TEXT[]
 ) RETURNS TABLE (
     hash TEXT,
     commit_data JSONB
-) AS $$
+) SET search_path = pggit, public AS $$
 BEGIN
     RETURN QUERY
     WITH RECURSIVE commit_list AS (

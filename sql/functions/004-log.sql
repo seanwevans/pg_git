@@ -1,7 +1,7 @@
 -- Path: /sql/functions/004-log.sql
 -- pg_git log functions
 
-CREATE OR REPLACE FUNCTION pg_git.get_log(
+CREATE OR REPLACE FUNCTION pggit.get_log(
     p_repo_id INTEGER,
     p_limit INTEGER DEFAULT NULL
 ) RETURNS TABLE (
@@ -10,42 +10,43 @@ CREATE OR REPLACE FUNCTION pg_git.get_log(
     parent_hash TEXT,
     author TEXT,
     message TEXT,
-    timestamp TIMESTAMP WITH TIME ZONE
-) AS $$
+    "timestamp" TIMESTAMP WITH TIME ZONE
+) SET search_path = pggit, public AS $$
 DECLARE
     v_head_commit TEXT;
 BEGIN
     -- Get HEAD commit
     SELECT commit_hash INTO v_head_commit
-    FROM pg_git.refs
+    FROM pggit.refs
     WHERE repo_id = p_repo_id AND name = 'HEAD';
 
     RETURN QUERY
     WITH RECURSIVE commit_log AS (
         SELECT c.*
-        FROM pg_git.commits c
+        FROM pggit.commits c
         WHERE c.repo_id = p_repo_id AND c.hash = v_head_commit
 
         UNION ALL
 
         SELECT c.*
-        FROM pg_git.commits c
+        FROM pggit.commits c
         INNER JOIN commit_log cl ON c.repo_id = p_repo_id AND c.hash = cl.parent_hash
     )
-    SELECT *
+    SELECT commit_log.hash, commit_log.tree_hash, commit_log.parent_hash,
+           commit_log.author, commit_log.message, commit_log."timestamp"
     FROM commit_log
     LIMIT p_limit;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Pretty format version with commit decoration
-CREATE OR REPLACE FUNCTION pg_git.get_decorated_log(
+CREATE OR REPLACE FUNCTION pggit.get_decorated_log(
     p_repo_id INTEGER,
     p_limit INTEGER DEFAULT NULL
 ) RETURNS TABLE (
     commit_line TEXT,
     refs TEXT[]
-) AS $$
+) SET search_path = pggit, public AS $$
 BEGIN
     RETURN QUERY
     WITH commit_refs AS (
@@ -53,9 +54,9 @@ BEGIN
                c.message,
                c.author,
                c.timestamp,
-               array_agg(r.name) as ref_names
-        FROM pg_git.get_log(p_repo_id, p_limit) c
-        LEFT JOIN pg_git.refs r ON r.repo_id = p_repo_id AND c.hash = r.commit_hash
+               array_agg(r.name) FILTER (WHERE r.name <> 'HEAD') as ref_names
+        FROM pggit.get_log(p_repo_id, p_limit) c
+        LEFT JOIN pggit.refs r ON r.repo_id = p_repo_id AND c.hash = r.commit_hash
         GROUP BY c.hash, c.message, c.author, c.timestamp
     )
     SELECT 
@@ -64,12 +65,12 @@ BEGIN
             E'\n',
             author,
             E'\n',
-            timestamp,
+            "timestamp",
             E'\n',
             E'\n    ',
             message
         ) as commit_line,
         ref_names
     FROM commit_refs
-    ORDER BY timestamp DESC;
+    ORDER BY "timestamp" DESC;
 END;$$ LANGUAGE plpgsql;

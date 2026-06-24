@@ -1,7 +1,7 @@
 -- Path: /sql/functions/025-verify-commit.sql
 -- Commit verification with GPG
 
-CREATE TABLE pg_git.gpg_keys (
+CREATE TABLE pggit.gpg_keys (
     repo_id INTEGER REFERENCES repositories(id),
     key_id TEXT NOT NULL,
     public_key TEXT NOT NULL,
@@ -11,25 +11,26 @@ CREATE TABLE pg_git.gpg_keys (
     PRIMARY KEY (repo_id, key_id)
 );
 
-CREATE TABLE pg_git.commit_signatures (
+CREATE TABLE pggit.commit_signatures (
     repo_id INTEGER REFERENCES repositories(id),
-    commit_hash TEXT NOT NULL REFERENCES commits(hash),
+    commit_hash TEXT NOT NULL,
     key_id TEXT NOT NULL,
     signature TEXT NOT NULL,
     signed_data TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (repo_id, commit_hash)
+    PRIMARY KEY (repo_id, commit_hash),
+    FOREIGN KEY (repo_id, commit_hash) REFERENCES pggit.commits(repo_id, hash)
 );
 
-CREATE OR REPLACE FUNCTION pg_git.add_gpg_key(
+CREATE OR REPLACE FUNCTION pggit.add_gpg_key(
     p_repo_id INTEGER,
     p_key_id TEXT,
     p_public_key TEXT,
     p_user_id TEXT,
     p_trust_level TEXT DEFAULT 'unknown'
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
-    INSERT INTO pg_git.gpg_keys (repo_id, key_id, public_key, user_id, trust_level)
+    INSERT INTO pggit.gpg_keys (repo_id, key_id, public_key, user_id, trust_level)
     VALUES (p_repo_id, p_key_id, p_public_key, p_user_id, p_trust_level)
     ON CONFLICT (repo_id, key_id) DO UPDATE 
     SET public_key = p_public_key,
@@ -38,7 +39,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.verify_commit(
+CREATE OR REPLACE FUNCTION pggit.verify_commit(
     p_repo_id INTEGER,
     p_commit_hash TEXT,
     p_require_trust_level TEXT DEFAULT NULL
@@ -48,14 +49,14 @@ CREATE OR REPLACE FUNCTION pg_git.verify_commit(
     user_id TEXT,
     trust_level TEXT,
     verification_message TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 DECLARE
     v_signature RECORD;
     v_key RECORD;
 BEGIN
     -- Get signature info
     SELECT * INTO v_signature
-    FROM pg_git.commit_signatures
+    FROM pggit.commit_signatures
     WHERE repo_id = p_repo_id
     AND commit_hash = p_commit_hash;
 
@@ -67,7 +68,7 @@ BEGIN
 
     -- Get key info
     SELECT * INTO v_key
-    FROM pg_git.gpg_keys
+    FROM pggit.gpg_keys
     WHERE repo_id = p_repo_id
     AND key_id = v_signature.key_id;
 
@@ -94,12 +95,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.sign_commit(
+CREATE OR REPLACE FUNCTION pggit.sign_commit(
     p_repo_id INTEGER,
     p_commit_hash TEXT,
     p_key_id TEXT,
     p_signature TEXT
-) RETURNS VOID AS $$
+) RETURNS VOID SET search_path = pggit, public AS $$
 DECLARE
     v_signed_data TEXT;
 BEGIN
@@ -108,7 +109,7 @@ BEGIN
     FROM commits
     WHERE hash = p_commit_hash;
 
-    INSERT INTO pg_git.commit_signatures (
+    INSERT INTO pggit.commit_signatures (
         repo_id, commit_hash, key_id, signature, signed_data
     ) VALUES (
         p_repo_id, p_commit_hash, p_key_id, p_signature, v_signed_data

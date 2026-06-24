@@ -1,11 +1,11 @@
 -- Path: /sql/functions/019-archive.sql
 -- Archive functionality
 
-CREATE OR REPLACE FUNCTION pg_git.create_archive(
+CREATE OR REPLACE FUNCTION pggit.create_archive(
     p_repo_id INTEGER,
     p_tree_ish TEXT DEFAULT 'HEAD',
     p_format TEXT DEFAULT 'tar'
-) RETURNS BYTEA AS $$
+) RETURNS BYTEA SET search_path = pggit, public AS $$
 DECLARE
     v_tree_hash TEXT;
     v_archive BYTEA;

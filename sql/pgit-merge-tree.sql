@@ -1,7 +1,7 @@
 -- Path: /sql/functions/022-merge-tree.sql
 -- Enhanced merge tree operations
 
-CREATE OR REPLACE FUNCTION pg_git.merge_trees(
+CREATE OR REPLACE FUNCTION pggit.merge_trees(
     p_base_tree TEXT,
     p_ours_tree TEXT,
     p_theirs_tree TEXT
@@ -11,7 +11,7 @@ CREATE OR REPLACE FUNCTION pg_git.merge_trees(
     mode TEXT,
     hash TEXT,
     status TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 BEGIN
     -- Get all paths from all trees
     RETURN QUERY
@@ -85,4 +85,8 @@ BEGIN
                ELSE 'clean'
            END as status
     FROM analysis
-    WHERE NOT (ours_hash = theirs_hash
+    -- Only report paths that actually differ across base/ours/theirs.
+    WHERE NOT (ours_hash IS NOT DISTINCT FROM theirs_hash
+               AND ours_hash IS NOT DISTINCT FROM base_hash);
+END;
+$$ LANGUAGE plpgsql;

@@ -79,7 +79,14 @@ A PostgreSQL-native Git implementation.
 The `pg_git.control` file provides PostgreSQL with metadata about the
 extension and instructs it to load `sql/pg_git--0.4.0.sql` when the
 extension is created. Both the control file and the SQL script are
-installed by `make install`.
+installed by `make install`. The install script is generated from the
+modular fragments under `sql/schema/`, `sql/functions/` and `sql/pgit-*.sql`
+(run `make` to regenerate it); editing it by hand is not recommended.
+
+> **Schema name:** the extension installs its objects into the `pggit`
+> schema (e.g. `pggit.init_repository(...)`). PostgreSQL reserves the
+> `pg_` prefix for system schemas, so the schema cannot be named `pg_git`
+> even though the extension itself is called `pg_git`.
 
 ## Dependencies
 
@@ -93,20 +100,18 @@ installed by `make install`.
 ### Optional (feature usage)
 - None currently. All listed dependencies are required to install `pg_git` as shipped.
 
-> **Why `plpython3u` is required:** the extension defines HTTPS helper functions (for example `pg_git.http_fetch`) in `LANGUAGE plpython3u`. That means `plpython3u` must be present when `CREATE EXTENSION pg_git` runs. In practice, only HTTPS-related features use those functions directly.
+> **Why `plpython3u` is required:** the extension defines HTTPS helper functions (for example `pggit.http_fetch`) in `LANGUAGE plpython3u`. That means `plpython3u` must be present when `CREATE EXTENSION pg_git` runs. In practice, only HTTPS-related features use those functions directly.
 
 ## Installation
 ```bash
 make && make install
 
-# In PostgreSQL:
-CREATE EXTENSION plpython3u;
-CREATE EXTENSION pgcrypto;
-CREATE EXTENSION pg_trgm;
-CREATE EXTENSION pg_git;
+# In PostgreSQL: CASCADE auto-installs the required extensions
+# (pgcrypto, pg_trgm, plpython3u).
+CREATE EXTENSION pg_git CASCADE;
 
 # Alternatively, from the command line:
-# psql -d yourdb -c "CREATE EXTENSION plpython3u; CREATE EXTENSION pgcrypto; CREATE EXTENSION pg_trgm; CREATE EXTENSION pg_git;"
+# psql -d yourdb -c "CREATE EXTENSION pg_git CASCADE;"
 ```
 
 ## Testing
@@ -151,47 +156,47 @@ docker-compose run --rm test
 ```sql
 
 -- Initialize repository
-SELECT pg_git.init_repository('my_repository', '/path/to/repo');
+SELECT pggit.init_repository('my_repository', '/path/to/repo');
 
 -- Clone repository
-SELECT pg_git.clone('https://github.com/org/repo.git', 'local_name', '/path');
+SELECT pggit.clone('https://github.com/org/repo.git', 'local_name', '/path');
 
 -- Stage / unstage files
-SELECT pg_git.stage_file(1, 'file.txt', 'content'::bytea);
-SELECT pg_git.unstage_file(1, 'file.txt');
+SELECT pggit.stage_file(1, 'file.txt', 'content'::bytea);
+SELECT pggit.unstage_file(1, 'file.txt');
 
 -- Commit
-SELECT pg_git.commit_index(1, 'author', 'Your commit message here');
+SELECT pggit.commit_index(1, 'author', 'Your commit message here');
 
 -- Branch creation and checkout
-SELECT pg_git.create_branch(1, 'feature');
-SELECT pg_git.checkout_branch(1, 'feature');
+SELECT pggit.create_branch(1, 'feature');
+SELECT pggit.checkout_branch(1, 'feature');
 
 -- Merge Branch
-SELECT pg_git.merge_branches(1, 'feature', 'main');
+SELECT pggit.merge_branches(1, 'feature', 'main');
 
 -- Remote operations with HTTPS
 -- Set encryption key for storing credentials
-ALTER SYSTEM SET pg_git.credential_key = 'my_secret';
+ALTER SYSTEM SET pggit.credential_key = 'my_secret';
 SELECT pg_reload_conf();
-SELECT pg_git.store_credentials(1, 'github.com', 'username', 'token');
+SELECT pggit.store_credentials(1, 'github.com', 'username', 'token');
 -- `http_fetch` uses Python to perform the actual HTTPS request
 
 -- Garbage collection
-SELECT * FROM pg_git.gc(1);
+SELECT * FROM pggit.gc(1);
 
 -- Integrity verification
-SELECT * FROM pg_git.verify_integrity(1);
+SELECT * FROM pggit.verify_integrity(1);
 
 -- Index optimization
-SELECT * FROM pg_git.optimize_indexes(1);
+SELECT * FROM pggit.optimize_indexes(1);
 
 -- View history
-SELECT * FROM pg_git.get_log(1);
+SELECT * FROM pggit.get_log(1);
 
 -- Tagging
-SELECT pg_git.create_tag(1, 'v1.0.0');
-SELECT * FROM pg_git.list_tags(1);
+SELECT pggit.create_tag(1, 'v1.0.0');
+SELECT * FROM pggit.list_tags(1);
 ```
 
 ## Version

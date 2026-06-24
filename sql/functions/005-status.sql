@@ -1,21 +1,21 @@
 -- Path: /sql/functions/005-status.sql
 -- pg_git status functions
 
-CREATE OR REPLACE FUNCTION pg_git.get_status(
+CREATE OR REPLACE FUNCTION pggit.get_status(
     p_repo_id INTEGER
 ) RETURNS TABLE (
     path TEXT,
     status TEXT,
     staged BOOLEAN
-) AS $$
+) SET search_path = pggit, public AS $$
 DECLARE
     v_head_commit TEXT;
     v_head_tree TEXT;
 BEGIN
     -- Get HEAD commit and tree
     SELECT c.hash, c.tree_hash INTO v_head_commit, v_head_tree
-    FROM pg_git.refs r
-    JOIN pg_git.commits c ON r.repo_id = p_repo_id AND c.repo_id = r.repo_id AND r.commit_hash = c.hash
+    FROM pggit.refs r
+    JOIN pggit.commits c ON r.repo_id = p_repo_id AND c.repo_id = r.repo_id AND r.commit_hash = c.hash
     WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
 
     RETURN QUERY
@@ -35,15 +35,15 @@ BEGIN
         END,
         TRUE
     FROM index_entries i
-    LEFT JOIN pg_git.trees t ON t.repo_id = p_repo_id AND t.hash = v_head_tree
+    LEFT JOIN pggit.trees t ON t.repo_id = p_repo_id AND t.hash = v_head_tree
     WHERE i.repo_id = p_repo_id;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Pretty format version
-CREATE OR REPLACE FUNCTION pg_git.get_formatted_status(
+CREATE OR REPLACE FUNCTION pggit.get_formatted_status(
     p_repo_id INTEGER
-) RETURNS TEXT AS $$
+) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
     v_output TEXT;
 BEGIN
@@ -54,7 +54,7 @@ BEGIN
         END,
         E'\n'
     ) INTO v_output
-    FROM pg_git.get_status(p_repo_id)
+    FROM pggit.get_status(p_repo_id)
     WHERE status IS NOT NULL;
 
     RETURN format(

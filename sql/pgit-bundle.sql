@@ -1,28 +1,28 @@
 -- Path: /sql/functions/032-bundle.sql
 -- Bundle repository data for offline transfer
 
-CREATE TABLE pg_git.bundles (
+CREATE TABLE pggit.bundles (
     id SERIAL PRIMARY KEY,
     repo_id INTEGER REFERENCES repositories(id),
     name TEXT NOT NULL,
     description TEXT,
     prerequisites TEXT[] DEFAULT ARRAY[]::TEXT[],
-    references TEXT[] NOT NULL,
+    "references" TEXT[] NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE OR REPLACE FUNCTION pg_git.create_bundle(
+CREATE OR REPLACE FUNCTION pggit.create_bundle(
     p_repo_id INTEGER,
     p_name TEXT,
     p_refs TEXT[],
     p_description TEXT DEFAULT NULL
-) RETURNS BYTEA AS $$
+) RETURNS BYTEA SET search_path = pggit, public AS $$
 DECLARE
     v_bundle_data BYTEA;
     v_bundle_id INTEGER;
 BEGIN
     -- Create bundle record
-    INSERT INTO pg_git.bundles (repo_id, name, description, references)
+    INSERT INTO pggit.bundles (repo_id, name, description, "references")
     VALUES (p_repo_id, p_name, p_description, p_refs)
     RETURNING id INTO v_bundle_id;
 
@@ -84,13 +84,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_git.unbundle(
+CREATE OR REPLACE FUNCTION pggit.unbundle(
     p_repo_id INTEGER,
     p_bundle_data BYTEA
 ) RETURNS TABLE (
     type TEXT,
     hash TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 DECLARE
     v_line RECORD;
 BEGIN

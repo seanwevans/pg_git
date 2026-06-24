@@ -1,7 +1,7 @@
 -- Path: /sql/functions/027-whatchanged.sql
 -- Whatchanged command implementation
 
-CREATE OR REPLACE FUNCTION pg_git.whatchanged(
+CREATE OR REPLACE FUNCTION pggit.whatchanged(
     p_repo_id INTEGER,
     p_since TEXT DEFAULT NULL,
     p_until TEXT DEFAULT 'HEAD',
@@ -9,7 +9,7 @@ CREATE OR REPLACE FUNCTION pg_git.whatchanged(
 ) RETURNS TABLE (
     commit_hash TEXT,
     author TEXT,
-    timestamp TIMESTAMP WITH TIME ZONE,
+    "timestamp" TIMESTAMP WITH TIME ZONE,
     message TEXT,
     path TEXT,
     change_type TEXT,
@@ -17,7 +17,7 @@ CREATE OR REPLACE FUNCTION pg_git.whatchanged(
     new_mode TEXT,
     old_hash TEXT,
     new_hash TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
 DECLARE
     v_since_hash TEXT;
     v_until_hash TEXT;
@@ -78,13 +78,13 @@ BEGIN
                    t2.mode as new_mode,
                    d.old_hash,
                    d.new_hash
-            FROM pg_git.diff_trees(
+            FROM pggit.diff_trees(
                 COALESCE(parent.repo_id, ch.repo_id),
                 parent.tree_hash,
                 ch.tree_hash
             ) d
-            LEFT JOIN pg_git.get_tree_entry(parent.tree_hash, d.path) t1 ON TRUE
-            LEFT JOIN pg_git.get_tree_entry(ch.tree_hash, d.path) t2 ON TRUE
+            LEFT JOIN pggit.get_tree_entry(parent.tree_hash, d.path) t1 ON TRUE
+            LEFT JOIN pggit.get_tree_entry(ch.tree_hash, d.path) t2 ON TRUE
             WHERE p_paths IS NULL OR d.path = ANY(p_paths)
         ) dt
     )
@@ -95,14 +95,14 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Helper function to get a single tree entry
-CREATE OR REPLACE FUNCTION pg_git.get_tree_entry(
+CREATE OR REPLACE FUNCTION pggit.get_tree_entry(
     p_tree_hash TEXT,
     p_path TEXT
 ) RETURNS TABLE (
     mode TEXT,
     type TEXT,
     hash TEXT
-) AS $$
+) SET search_path = pggit, public AS $$
     SELECT (e->>'mode')::TEXT,
            (e->>'type')::TEXT,
            (e->>'hash')::TEXT
