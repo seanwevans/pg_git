@@ -2093,9 +2093,9 @@ BEGIN
     -- Find middle commit
     SELECT hash INTO v_mid_commit
     FROM (
-        SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
+        SELECT hash, ROW_NUMBER() OVER (ORDER BY (commit_data->>'timestamp')::timestamptz) as rn,
                COUNT(*) OVER () as total
-        FROM pggit.rev_list(p_bad_commit, ARRAY[p_good_commit])
+        FROM pggit.rev_list(p_repo_id, p_bad_commit, ARRAY[p_good_commit])
     ) commits
     WHERE rn = total/2;
     
@@ -2128,9 +2128,10 @@ BEGIN
     -- Find next commit to test
     SELECT hash INTO v_next
     FROM (
-        SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
+        SELECT hash, ROW_NUMBER() OVER (ORDER BY (commit_data->>'timestamp')::timestamptz) as rn,
                COUNT(*) OVER () as total
         FROM pggit.rev_list(
+            p_repo_id,
             (SELECT bad_commits[1] FROM pggit.bisect_state WHERE repo_id = p_repo_id),
             (SELECT good_commits FROM pggit.bisect_state WHERE repo_id = p_repo_id)
         )
@@ -2166,9 +2167,10 @@ BEGIN
     -- Find next commit to test
     SELECT hash INTO v_next
     FROM (
-        SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
+        SELECT hash, ROW_NUMBER() OVER (ORDER BY (commit_data->>'timestamp')::timestamptz) as rn,
                COUNT(*) OVER () as total
         FROM pggit.rev_list(
+            p_repo_id,
             (SELECT bad_commits[1] FROM pggit.bisect_state WHERE repo_id = p_repo_id),
             (SELECT good_commits FROM pggit.bisect_state WHERE repo_id = p_repo_id)
         )
@@ -2596,11 +2598,12 @@ CREATE OR REPLACE FUNCTION pggit.cat_file(
     content TEXT
 ) SET search_path = pggit, public AS $$
 BEGIN
-    -- Try blobs
+    -- Try blobs. Columns are table-qualified because the RETURNS TABLE OUT
+    -- parameter "content" would otherwise shadow blobs.content.
     RETURN QUERY
     SELECT 'blob'::TEXT,
-           octet_length(content)::BIGINT,
-           encode(content, 'escape')
+           octet_length(blobs.content)::BIGINT,
+           encode(blobs.content, 'escape')
     FROM blobs WHERE repo_id = p_repo_id AND hash = p_hash
     AND (p_type IS NULL OR p_type = 'blob');
     
@@ -2690,9 +2693,11 @@ BEGIN
             jsonb_array_elements(t.entries) se
             WHERE te.type = 'tree'
         )
-        SELECT mode, type, hash, path
+        -- Qualify with the CTE name: mode/type/hash/path are also RETURNS TABLE
+        -- OUT parameters and would otherwise be ambiguous.
+        SELECT tree_entries.mode, tree_entries.type, tree_entries.hash, tree_entries.path
         FROM tree_entries
-        ORDER BY path;
+        ORDER BY tree_entries.path;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
@@ -2702,8 +2707,9 @@ CREATE OR REPLACE FUNCTION pggit.merge_base(
     p_commit1 TEXT,
     p_commit2 TEXT
 ) RETURNS TEXT SET search_path = pggit, public AS $$
-    -- Reuse existing merge base finding function
-    SELECT pggit.find_merge_base(p_repo_id, p_commit1, p_commit2);
+    -- Reuse existing merge base finding function. find_merge_base identifies the
+    -- repository from the commit hashes themselves, so it takes only two args.
+    SELECT pggit.find_merge_base(p_commit1, p_commit2);
 $$ LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pggit.rev_list(
@@ -2717,8 +2723,9 @@ CREATE OR REPLACE FUNCTION pggit.rev_list(
 BEGIN
     RETURN QUERY
     WITH RECURSIVE commit_list AS (
-        -- Start commit
-        SELECT hash,
+        -- Start commit. commits.hash is qualified because "hash" is also a
+        -- RETURNS TABLE OUT parameter and would otherwise be ambiguous.
+        SELECT commits.hash,
                jsonb_build_object(
                    'tree', tree_hash,
                    'parent', parent_hash,
@@ -2727,7 +2734,7 @@ BEGIN
                    'timestamp', timestamp
                ) as commit_data
         FROM commits
-        WHERE repo_id = p_repo_id AND hash = p_start_commit
+        WHERE repo_id = p_repo_id AND commits.hash = p_start_commit
         
         UNION
         
