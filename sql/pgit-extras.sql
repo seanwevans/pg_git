@@ -104,9 +104,9 @@ BEGIN
     -- Find middle commit
     SELECT hash INTO v_mid_commit
     FROM (
-        SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
+        SELECT hash, ROW_NUMBER() OVER (ORDER BY (commit_data->>'timestamp')::timestamptz) as rn,
                COUNT(*) OVER () as total
-        FROM pggit.rev_list(p_bad_commit, ARRAY[p_good_commit])
+        FROM pggit.rev_list(p_repo_id, p_bad_commit, ARRAY[p_good_commit])
     ) commits
     WHERE rn = total/2;
     
@@ -139,9 +139,10 @@ BEGIN
     -- Find next commit to test
     SELECT hash INTO v_next
     FROM (
-        SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
+        SELECT hash, ROW_NUMBER() OVER (ORDER BY (commit_data->>'timestamp')::timestamptz) as rn,
                COUNT(*) OVER () as total
         FROM pggit.rev_list(
+            p_repo_id,
             (SELECT bad_commits[1] FROM pggit.bisect_state WHERE repo_id = p_repo_id),
             (SELECT good_commits FROM pggit.bisect_state WHERE repo_id = p_repo_id)
         )
@@ -177,9 +178,10 @@ BEGIN
     -- Find next commit to test
     SELECT hash INTO v_next
     FROM (
-        SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
+        SELECT hash, ROW_NUMBER() OVER (ORDER BY (commit_data->>'timestamp')::timestamptz) as rn,
                COUNT(*) OVER () as total
         FROM pggit.rev_list(
+            p_repo_id,
             (SELECT bad_commits[1] FROM pggit.bisect_state WHERE repo_id = p_repo_id),
             (SELECT good_commits FROM pggit.bisect_state WHERE repo_id = p_repo_id)
         )
