@@ -62,6 +62,7 @@ CORE_TESTS := \
        test/sql/merge_conflicts_test.sql \
        test/sql/remote_test.sql \
        test/sql/advanced_test.sql \
+       test/sql/revert_test.sql \
        test/sql/reset_test.sql \
        test/sql/plumbing_test.sql \
        test/sql/search_path_qualification_test.sql \
