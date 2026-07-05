@@ -61,11 +61,12 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Get key info
+    -- Get key info. gpg_keys.key_id is qualified: "key_id" is also a RETURNS
+    -- TABLE OUT parameter and would otherwise be an ambiguous column reference.
     SELECT * INTO v_key
     FROM pggit.gpg_keys
     WHERE repo_id = p_repo_id
-    AND key_id = v_signature.key_id;
+    AND gpg_keys.key_id = v_signature.key_id;
 
     -- Check trust level
     IF p_require_trust_level IS NOT NULL AND 

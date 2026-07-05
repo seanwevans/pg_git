@@ -2020,6 +2020,62 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Produce a new tree by taking p_onto_tree and reversing the change that turned
+-- p_old_tree into p_new_tree (the old->new delta). This is the tree-level core of
+-- a revert: for each path the delta touched, a file it added is removed, and a
+-- file it modified or deleted is restored to its p_old_tree contents. Paths the
+-- delta did not touch are carried over from p_onto_tree unchanged.
+CREATE OR REPLACE FUNCTION pggit.apply_inverse_diff(
+    p_repo_id INTEGER,
+    p_onto_tree TEXT,
+    p_old_tree TEXT,
+    p_new_tree TEXT
+) RETURNS TEXT SET search_path = pggit, public AS $$
+DECLARE
+    v_result JSONB;
+BEGIN
+    WITH onto_entries AS (
+        SELECT e->>'name' AS name, e AS entry
+        FROM pggit.trees t, jsonb_array_elements(t.entries) e
+        WHERE t.repo_id = p_repo_id AND t.hash = p_onto_tree
+    ),
+    old_entries AS (
+        SELECT e->>'name' AS name, e AS entry
+        FROM pggit.trees t, jsonb_array_elements(t.entries) e
+        WHERE t.repo_id = p_repo_id AND t.hash = p_old_tree
+    ),
+    delta AS (
+        SELECT d.change_type, d.path
+        FROM pggit.diff_trees(p_repo_id, p_old_tree, p_new_tree) d
+    ),
+    merged AS (
+        -- Carry over onto entries, but drop paths the delta added (reverting an
+        -- addition removes the file) and restore old contents for modified paths.
+        SELECT o.name,
+               CASE WHEN dl.change_type = 'modified'
+                        THEN (SELECT oe.entry FROM old_entries oe WHERE oe.name = o.name)
+                    ELSE o.entry
+               END AS entry
+        FROM onto_entries o
+        LEFT JOIN delta dl ON dl.path = o.name
+        WHERE dl.change_type IS DISTINCT FROM 'added'
+
+        UNION ALL
+
+        -- Restore files the delta deleted (present in old, absent in new) that
+        -- are not already present in the onto tree.
+        SELECT oe.name, oe.entry
+        FROM delta dl
+        JOIN old_entries oe ON oe.name = dl.path
+        WHERE dl.change_type = 'deleted'
+          AND NOT EXISTS (SELECT 1 FROM onto_entries o2 WHERE o2.name = dl.path)
+    )
+    SELECT jsonb_agg(entry ORDER BY name) INTO v_result FROM merged;
+
+    RETURN pggit.create_tree(p_repo_id, COALESCE(v_result, '[]'::jsonb));
+END;
+$$ LANGUAGE plpgsql;
+
 -- Revert implementation
 CREATE OR REPLACE FUNCTION pggit.revert(
     p_repo_id INTEGER,
@@ -2028,20 +2084,28 @@ CREATE OR REPLACE FUNCTION pggit.revert(
 DECLARE
     v_parent_tree TEXT;
     v_commit_tree TEXT;
+    v_head_tree TEXT;
     v_new_tree TEXT;
     v_new_commit TEXT;
     v_message TEXT;
 BEGIN
-    -- Get trees and message
+    -- Get the reverted commit's tree, its parent's tree, and its message.
     SELECT tree_hash, message,
            (SELECT tree_hash FROM commits WHERE repo_id = p_repo_id AND hash = c.parent_hash)
     INTO v_commit_tree, v_message, v_parent_tree
     FROM commits c
     WHERE c.repo_id = p_repo_id AND hash = p_commit_hash;
-    
-    -- Create inverse diff
-    v_new_tree := pggit.apply_inverse_diff(v_parent_tree, v_commit_tree);
-    
+
+    -- The revert applies on top of the current HEAD tree.
+    SELECT c.tree_hash INTO v_head_tree
+    FROM refs r
+    JOIN commits c ON c.repo_id = r.repo_id AND c.hash = r.commit_hash
+    WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
+
+    -- Reverse the parent->commit change onto HEAD.
+    v_new_tree := pggit.apply_inverse_diff(
+        p_repo_id, v_head_tree, v_parent_tree, v_commit_tree);
+
     -- Create revert commit
     v_new_commit := pggit.create_commit(
         p_repo_id,
@@ -2050,12 +2114,12 @@ BEGIN
         current_user,
         'Revert "' || v_message || '"'
     );
-    
+
     -- Update HEAD
     UPDATE refs
     SET commit_hash = v_new_commit
     WHERE repo_id = p_repo_id AND name = 'HEAD';
-    
+
     RETURN v_new_commit;
 END;
 $$ LANGUAGE plpgsql;
@@ -2089,9 +2153,9 @@ BEGIN
     -- Find middle commit
     SELECT hash INTO v_mid_commit
     FROM (
-        SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
+        SELECT hash, ROW_NUMBER() OVER (ORDER BY (commit_data->>'timestamp')::timestamptz) as rn,
                COUNT(*) OVER () as total
-        FROM pggit.rev_list(p_bad_commit, ARRAY[p_good_commit])
+        FROM pggit.rev_list(p_repo_id, p_bad_commit, ARRAY[p_good_commit])
     ) commits
     WHERE rn = total/2;
     
@@ -2124,9 +2188,10 @@ BEGIN
     -- Find next commit to test
     SELECT hash INTO v_next
     FROM (
-        SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
+        SELECT hash, ROW_NUMBER() OVER (ORDER BY (commit_data->>'timestamp')::timestamptz) as rn,
                COUNT(*) OVER () as total
         FROM pggit.rev_list(
+            p_repo_id,
             (SELECT bad_commits[1] FROM pggit.bisect_state WHERE repo_id = p_repo_id),
             (SELECT good_commits FROM pggit.bisect_state WHERE repo_id = p_repo_id)
         )
@@ -2162,9 +2227,10 @@ BEGIN
     -- Find next commit to test
     SELECT hash INTO v_next
     FROM (
-        SELECT hash, ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
+        SELECT hash, ROW_NUMBER() OVER (ORDER BY (commit_data->>'timestamp')::timestamptz) as rn,
                COUNT(*) OVER () as total
         FROM pggit.rev_list(
+            p_repo_id,
             (SELECT bad_commits[1] FROM pggit.bisect_state WHERE repo_id = p_repo_id),
             (SELECT good_commits FROM pggit.bisect_state WHERE repo_id = p_repo_id)
         )
@@ -2415,7 +2481,8 @@ BEGIN
                'base' as source
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_base_tree
+        -- trees.hash is qualified: "hash" is also a RETURNS TABLE OUT parameter.
+        WHERE trees.hash = p_base_tree
         
         UNION ALL
         
@@ -2425,7 +2492,7 @@ BEGIN
                'ours' as source
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_ours_tree
+        WHERE trees.hash = p_ours_tree
         
         UNION ALL
         
@@ -2435,25 +2502,28 @@ BEGIN
                'theirs' as source
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_theirs_tree
+        WHERE trees.hash = p_theirs_tree
     ),
     -- Analyze changes
     analysis AS (
-        SELECT DISTINCT path,
+        SELECT DISTINCT all_paths.path,
                bool_or(source = 'base') as in_base,
                bool_or(source = 'ours') as in_ours,
                bool_or(source = 'theirs') as in_theirs,
-               max(CASE WHEN source = 'base' THEN hash END) as base_hash,
-               max(CASE WHEN source = 'ours' THEN hash END) as ours_hash,
-               max(CASE WHEN source = 'theirs' THEN hash END) as theirs_hash,
-               max(CASE WHEN source = 'base' THEN mode END) as base_mode,
-               max(CASE WHEN source = 'ours' THEN mode END) as ours_mode,
-               max(CASE WHEN source = 'theirs' THEN mode END) as theirs_mode
+               -- all_paths.hash / all_paths.mode are qualified: "hash" and
+               -- "mode" are also RETURNS TABLE OUT parameters.
+               max(CASE WHEN source = 'base' THEN all_paths.hash END) as base_hash,
+               max(CASE WHEN source = 'ours' THEN all_paths.hash END) as ours_hash,
+               max(CASE WHEN source = 'theirs' THEN all_paths.hash END) as theirs_hash,
+               max(CASE WHEN source = 'base' THEN all_paths.mode END) as base_mode,
+               max(CASE WHEN source = 'ours' THEN all_paths.mode END) as ours_mode,
+               max(CASE WHEN source = 'theirs' THEN all_paths.mode END) as theirs_mode
         FROM all_paths
-        GROUP BY path
+        GROUP BY all_paths.path
     )
-    SELECT path,
-           CASE 
+    -- analysis.path is qualified: "path" is also a RETURNS TABLE OUT parameter.
+    SELECT analysis.path,
+           CASE
                WHEN NOT in_base AND in_ours AND in_theirs AND ours_hash != theirs_hash THEN 2  -- conflict
                WHEN in_base AND in_ours AND in_theirs AND base_hash != ours_hash AND base_hash != theirs_hash THEN 2  -- conflict
                ELSE 0  -- no conflict
@@ -2592,11 +2662,12 @@ CREATE OR REPLACE FUNCTION pggit.cat_file(
     content TEXT
 ) SET search_path = pggit, public AS $$
 BEGIN
-    -- Try blobs
+    -- Try blobs. Columns are table-qualified because the RETURNS TABLE OUT
+    -- parameter "content" would otherwise shadow blobs.content.
     RETURN QUERY
     SELECT 'blob'::TEXT,
-           octet_length(content)::BIGINT,
-           encode(content, 'escape')
+           octet_length(blobs.content)::BIGINT,
+           encode(blobs.content, 'escape')
     FROM blobs WHERE repo_id = p_repo_id AND hash = p_hash
     AND (p_type IS NULL OR p_type = 'blob');
     
@@ -2686,9 +2757,11 @@ BEGIN
             jsonb_array_elements(t.entries) se
             WHERE te.type = 'tree'
         )
-        SELECT mode, type, hash, path
+        -- Qualify with the CTE name: mode/type/hash/path are also RETURNS TABLE
+        -- OUT parameters and would otherwise be ambiguous.
+        SELECT tree_entries.mode, tree_entries.type, tree_entries.hash, tree_entries.path
         FROM tree_entries
-        ORDER BY path;
+        ORDER BY tree_entries.path;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
@@ -2698,8 +2771,9 @@ CREATE OR REPLACE FUNCTION pggit.merge_base(
     p_commit1 TEXT,
     p_commit2 TEXT
 ) RETURNS TEXT SET search_path = pggit, public AS $$
-    -- Reuse existing merge base finding function
-    SELECT pggit.find_merge_base(p_repo_id, p_commit1, p_commit2);
+    -- Reuse existing merge base finding function. find_merge_base identifies the
+    -- repository from the commit hashes themselves, so it takes only two args.
+    SELECT pggit.find_merge_base(p_commit1, p_commit2);
 $$ LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pggit.rev_list(
@@ -2713,8 +2787,9 @@ CREATE OR REPLACE FUNCTION pggit.rev_list(
 BEGIN
     RETURN QUERY
     WITH RECURSIVE commit_list AS (
-        -- Start commit
-        SELECT hash,
+        -- Start commit. commits.hash is qualified because "hash" is also a
+        -- RETURNS TABLE OUT parameter and would otherwise be ambiguous.
+        SELECT commits.hash,
                jsonb_build_object(
                    'tree', tree_hash,
                    'parent', parent_hash,
@@ -2723,7 +2798,7 @@ BEGIN
                    'timestamp', timestamp
                ) as commit_data
         FROM commits
-        WHERE repo_id = p_repo_id AND hash = p_start_commit
+        WHERE repo_id = p_repo_id AND commits.hash = p_start_commit
         
         UNION
         
@@ -3365,10 +3440,12 @@ BEGIN
     END IF;
 
     -- Get key info
+    -- gpg_keys.key_id is qualified: "key_id" is also a RETURNS TABLE OUT
+    -- parameter and would otherwise be an ambiguous column reference.
     SELECT * INTO v_key
     FROM pggit.gpg_keys
     WHERE repo_id = p_repo_id
-    AND key_id = v_signature.key_id;
+    AND gpg_keys.key_id = v_signature.key_id;
 
     IF NOT FOUND THEN
         RETURN QUERY
@@ -3479,11 +3556,12 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Get key info
+    -- Get key info. gpg_keys.key_id is qualified: "key_id" is also a RETURNS
+    -- TABLE OUT parameter and would otherwise be an ambiguous column reference.
     SELECT * INTO v_key
     FROM pggit.gpg_keys
     WHERE repo_id = p_repo_id
-    AND key_id = v_signature.key_id;
+    AND gpg_keys.key_id = v_signature.key_id;
 
     -- Check trust level
     IF p_require_trust_level IS NOT NULL AND 
@@ -3544,10 +3622,12 @@ DECLARE
     v_since_hash TEXT;
     v_until_hash TEXT;
 BEGIN
-    -- Resolve commit references
+    -- Resolve commit references. refs.commit_hash is qualified because
+    -- "commit_hash" is also a RETURNS TABLE OUT parameter, and the lookup is
+    -- scoped to this repository's HEAD rather than any repo's HEAD.
     IF p_until = 'HEAD' THEN
-        SELECT commit_hash INTO v_until_hash
-        FROM refs WHERE name = 'HEAD';
+        SELECT refs.commit_hash INTO v_until_hash
+        FROM refs WHERE refs.repo_id = p_repo_id AND name = 'HEAD';
     ELSE
         v_until_hash := p_until;
     END IF;
@@ -3555,11 +3635,12 @@ BEGIN
     -- Get commit history with changes
     RETURN QUERY
     WITH RECURSIVE commit_history AS (
-        -- Start from until commit
-        SELECT repo_id, hash, parent_hash, author, timestamp, message, tree_hash
-        FROM commits
-        WHERE repo_id = p_repo_id
-          AND hash = v_until_hash
+        -- Start from until commit. Columns are qualified because author,
+        -- timestamp and message are also RETURNS TABLE OUT parameters.
+        SELECT c.repo_id, c.hash, c.parent_hash, c.author, c.timestamp, c.message, c.tree_hash
+        FROM commits c
+        WHERE c.repo_id = p_repo_id
+          AND c.hash = v_until_hash
 
         UNION ALL
 
@@ -3612,7 +3693,7 @@ BEGIN
     )
     SELECT *
     FROM file_changes
-    ORDER BY timestamp DESC, commit_hash, path;
+    ORDER BY file_changes.timestamp DESC, file_changes.commit_hash, file_changes.path;
 END;
 $$ LANGUAGE plpgsql;
 
