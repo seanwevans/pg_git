@@ -35,6 +35,62 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Produce a new tree by taking p_onto_tree and reversing the change that turned
+-- p_old_tree into p_new_tree (the old->new delta). This is the tree-level core of
+-- a revert: for each path the delta touched, a file it added is removed, and a
+-- file it modified or deleted is restored to its p_old_tree contents. Paths the
+-- delta did not touch are carried over from p_onto_tree unchanged.
+CREATE OR REPLACE FUNCTION pggit.apply_inverse_diff(
+    p_repo_id INTEGER,
+    p_onto_tree TEXT,
+    p_old_tree TEXT,
+    p_new_tree TEXT
+) RETURNS TEXT SET search_path = pggit, public AS $$
+DECLARE
+    v_result JSONB;
+BEGIN
+    WITH onto_entries AS (
+        SELECT e->>'name' AS name, e AS entry
+        FROM pggit.trees t, jsonb_array_elements(t.entries) e
+        WHERE t.repo_id = p_repo_id AND t.hash = p_onto_tree
+    ),
+    old_entries AS (
+        SELECT e->>'name' AS name, e AS entry
+        FROM pggit.trees t, jsonb_array_elements(t.entries) e
+        WHERE t.repo_id = p_repo_id AND t.hash = p_old_tree
+    ),
+    delta AS (
+        SELECT d.change_type, d.path
+        FROM pggit.diff_trees(p_repo_id, p_old_tree, p_new_tree) d
+    ),
+    merged AS (
+        -- Carry over onto entries, but drop paths the delta added (reverting an
+        -- addition removes the file) and restore old contents for modified paths.
+        SELECT o.name,
+               CASE WHEN dl.change_type = 'modified'
+                        THEN (SELECT oe.entry FROM old_entries oe WHERE oe.name = o.name)
+                    ELSE o.entry
+               END AS entry
+        FROM onto_entries o
+        LEFT JOIN delta dl ON dl.path = o.name
+        WHERE dl.change_type IS DISTINCT FROM 'added'
+
+        UNION ALL
+
+        -- Restore files the delta deleted (present in old, absent in new) that
+        -- are not already present in the onto tree.
+        SELECT oe.name, oe.entry
+        FROM delta dl
+        JOIN old_entries oe ON oe.name = dl.path
+        WHERE dl.change_type = 'deleted'
+          AND NOT EXISTS (SELECT 1 FROM onto_entries o2 WHERE o2.name = dl.path)
+    )
+    SELECT jsonb_agg(entry ORDER BY name) INTO v_result FROM merged;
+
+    RETURN pggit.create_tree(p_repo_id, COALESCE(v_result, '[]'::jsonb));
+END;
+$$ LANGUAGE plpgsql;
+
 -- Revert implementation
 CREATE OR REPLACE FUNCTION pggit.revert(
     p_repo_id INTEGER,
@@ -43,20 +99,28 @@ CREATE OR REPLACE FUNCTION pggit.revert(
 DECLARE
     v_parent_tree TEXT;
     v_commit_tree TEXT;
+    v_head_tree TEXT;
     v_new_tree TEXT;
     v_new_commit TEXT;
     v_message TEXT;
 BEGIN
-    -- Get trees and message
+    -- Get the reverted commit's tree, its parent's tree, and its message.
     SELECT tree_hash, message,
            (SELECT tree_hash FROM commits WHERE repo_id = p_repo_id AND hash = c.parent_hash)
     INTO v_commit_tree, v_message, v_parent_tree
     FROM commits c
     WHERE c.repo_id = p_repo_id AND hash = p_commit_hash;
-    
-    -- Create inverse diff
-    v_new_tree := pggit.apply_inverse_diff(v_parent_tree, v_commit_tree);
-    
+
+    -- The revert applies on top of the current HEAD tree.
+    SELECT c.tree_hash INTO v_head_tree
+    FROM refs r
+    JOIN commits c ON c.repo_id = r.repo_id AND c.hash = r.commit_hash
+    WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
+
+    -- Reverse the parent->commit change onto HEAD.
+    v_new_tree := pggit.apply_inverse_diff(
+        p_repo_id, v_head_tree, v_parent_tree, v_commit_tree);
+
     -- Create revert commit
     v_new_commit := pggit.create_commit(
         p_repo_id,
@@ -65,12 +129,12 @@ BEGIN
         current_user,
         'Revert "' || v_message || '"'
     );
-    
+
     -- Update HEAD
     UPDATE refs
     SET commit_hash = v_new_commit
     WHERE repo_id = p_repo_id AND name = 'HEAD';
-    
+
     RETURN v_new_commit;
 END;
 $$ LANGUAGE plpgsql;
