@@ -16,23 +16,26 @@ DECLARE
     v_report_id INTEGER;
     v_report_data JSONB;
 BEGIN
-    -- Collect repository info
+    -- Collect repository info. Object counts are scoped to this repository so
+    -- the report reflects the requested repo rather than the whole install.
     WITH repo_info AS (
         SELECT r.*,
-               (SELECT COUNT(*) FROM commits c) as commit_count,
-               (SELECT COUNT(*) FROM blobs b) as blob_count,
-               (SELECT COUNT(*) FROM trees t) as tree_count,
-               (SELECT COUNT(*) FROM refs rf) as ref_count
+               (SELECT COUNT(*) FROM commits c WHERE c.repo_id = p_repo_id) as commit_count,
+               (SELECT COUNT(*) FROM blobs b WHERE b.repo_id = p_repo_id) as blob_count,
+               (SELECT COUNT(*) FROM trees t WHERE t.repo_id = p_repo_id) as tree_count,
+               (SELECT COUNT(*) FROM refs rf WHERE rf.repo_id = p_repo_id) as ref_count
         FROM repositories r
         WHERE id = p_repo_id
     ),
-    -- Collect size info
+    -- Collect size info (scoped to this repository).
     size_info AS (
         SELECT 'blobs' as type, pg_size_pretty(sum(octet_length(content))) as total_size
         FROM blobs
+        WHERE repo_id = p_repo_id
         UNION ALL
         SELECT 'trees', pg_size_pretty(sum(octet_length(entries::text)))
         FROM trees
+        WHERE repo_id = p_repo_id
     ),
     -- Collect performance metrics
     perf_metrics AS (
@@ -46,19 +49,16 @@ BEGIN
         FROM pggit.verify_integrity(p_repo_id)
         GROUP BY status
     )
+    -- Each section is built with a scalar subquery so the aggregated sections
+    -- (sizes, errors) do not have to share a GROUP BY with the single-row
+    -- repository/performance sections.
     SELECT jsonb_build_object(
-        'repository', row_to_json(repo_info),
-        'sizes', jsonb_agg(to_jsonb(size_info)),
-        'performance', to_jsonb(perf_metrics),
-        'errors', jsonb_agg(to_jsonb(error_info)),
-        'configs', (
-            SELECT jsonb_object_agg(key, value)
-            FROM pggit.config
-            WHERE repo_id = p_repo_id
-        )
+        'repository', (SELECT row_to_json(repo_info) FROM repo_info),
+        'sizes',      (SELECT jsonb_agg(to_jsonb(size_info)) FROM size_info),
+        'performance',(SELECT to_jsonb(perf_metrics) FROM perf_metrics),
+        'errors',     (SELECT jsonb_agg(to_jsonb(error_info)) FROM error_info)
     )
-    INTO v_report_data
-    FROM repo_info, size_info, perf_metrics, error_info;
+    INTO v_report_data;
 
     -- Store report
     INSERT INTO pggit.diagnostic_reports (repo_id, report_type, report_data)
@@ -96,10 +96,6 @@ BEGIN
     UNION ALL
     SELECT 'Error Summary',
            jsonb_pretty(report_data->'errors')
-    FROM report
-    UNION ALL
-    SELECT 'Configuration',
-           jsonb_pretty(report_data->'configs')
     FROM report;
 END;
 $$ LANGUAGE plpgsql;

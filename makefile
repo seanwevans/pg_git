@@ -62,6 +62,7 @@ CORE_TESTS := \
        test/sql/merge_conflicts_test.sql \
        test/sql/remote_test.sql \
        test/sql/advanced_test.sql \
+       test/sql/diagnose_test.sql \
        test/sql/revert_test.sql \
        test/sql/reset_test.sql \
        test/sql/ambiguous_column_regression_test.sql \
