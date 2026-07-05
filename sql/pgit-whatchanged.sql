@@ -22,10 +22,12 @@ DECLARE
     v_since_hash TEXT;
     v_until_hash TEXT;
 BEGIN
-    -- Resolve commit references
+    -- Resolve commit references. refs.commit_hash is qualified because
+    -- "commit_hash" is also a RETURNS TABLE OUT parameter, and the lookup is
+    -- scoped to this repository's HEAD rather than any repo's HEAD.
     IF p_until = 'HEAD' THEN
-        SELECT commit_hash INTO v_until_hash
-        FROM refs WHERE name = 'HEAD';
+        SELECT refs.commit_hash INTO v_until_hash
+        FROM refs WHERE refs.repo_id = p_repo_id AND name = 'HEAD';
     ELSE
         v_until_hash := p_until;
     END IF;
@@ -33,11 +35,12 @@ BEGIN
     -- Get commit history with changes
     RETURN QUERY
     WITH RECURSIVE commit_history AS (
-        -- Start from until commit
-        SELECT repo_id, hash, parent_hash, author, timestamp, message, tree_hash
-        FROM commits
-        WHERE repo_id = p_repo_id
-          AND hash = v_until_hash
+        -- Start from until commit. Columns are qualified because author,
+        -- timestamp and message are also RETURNS TABLE OUT parameters.
+        SELECT c.repo_id, c.hash, c.parent_hash, c.author, c.timestamp, c.message, c.tree_hash
+        FROM commits c
+        WHERE c.repo_id = p_repo_id
+          AND c.hash = v_until_hash
 
         UNION ALL
 
@@ -90,7 +93,7 @@ BEGIN
     )
     SELECT *
     FROM file_changes
-    ORDER BY timestamp DESC, commit_hash, path;
+    ORDER BY file_changes.timestamp DESC, file_changes.commit_hash, file_changes.path;
 END;
 $$ LANGUAGE plpgsql;
 
