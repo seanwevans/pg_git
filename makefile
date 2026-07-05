@@ -63,6 +63,7 @@ CORE_TESTS := \
        test/sql/remote_test.sql \
        test/sql/advanced_test.sql \
        test/sql/reset_test.sql \
+       test/sql/ambiguous_column_regression_test.sql \
        test/sql/search_path_qualification_test.sql \
        test/sql/gc_test.sql \
        test/sql/optimize_indexes_test.sql
