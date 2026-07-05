@@ -21,16 +21,14 @@ BEGIN
     v_new_commit := pggit.create_commit(
         p_repo_id,
         v_tree_hash,
-        (SELECT commit_hash FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD'),
+        pggit.resolve_ref(p_repo_id, 'HEAD'),
         v_author,
         v_message || ' (cherry-picked from ' || p_commit_hash || ')'
     );
-    
-    -- Update HEAD
-    UPDATE refs
-    SET commit_hash = v_new_commit
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
-    
+
+    -- Advance the current branch (or detached HEAD) to the new commit.
+    PERFORM pggit.advance_head(p_repo_id, v_new_commit);
+
     RETURN v_new_commit;
 END;
 $$ LANGUAGE plpgsql;
@@ -111,11 +109,10 @@ BEGIN
     FROM commits c
     WHERE c.repo_id = p_repo_id AND hash = p_commit_hash;
 
-    -- The revert applies on top of the current HEAD tree.
+    -- The revert applies on top of the current HEAD tree (resolving symbolic HEAD).
     SELECT c.tree_hash INTO v_head_tree
-    FROM refs r
-    JOIN commits c ON c.repo_id = r.repo_id AND c.hash = r.commit_hash
-    WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
+    FROM commits c
+    WHERE c.repo_id = p_repo_id AND c.hash = pggit.resolve_ref(p_repo_id, 'HEAD');
 
     -- Reverse the parent->commit change onto HEAD.
     v_new_tree := pggit.apply_inverse_diff(
@@ -125,15 +122,13 @@ BEGIN
     v_new_commit := pggit.create_commit(
         p_repo_id,
         v_new_tree,
-        (SELECT commit_hash FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD'),
+        pggit.resolve_ref(p_repo_id, 'HEAD'),
         current_user,
         'Revert "' || v_message || '"'
     );
 
-    -- Update HEAD
-    UPDATE refs
-    SET commit_hash = v_new_commit
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Advance the current branch (or detached HEAD) to the revert commit.
+    PERFORM pggit.advance_head(p_repo_id, v_new_commit);
 
     RETURN v_new_commit;
 END;
@@ -284,14 +279,9 @@ CREATE OR REPLACE FUNCTION pggit.grep(
 DECLARE
     v_commit_hash TEXT;
 BEGIN
-    -- Resolve commit
-    IF p_commit = 'HEAD' THEN
-        SELECT commit_hash INTO v_commit_hash
-        FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD';
-    ELSE
-        v_commit_hash := p_commit;
-    END IF;
-    
+    -- Resolve commit (HEAD follows the symbolic ref to the current branch tip).
+    v_commit_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_commit), p_commit);
+
     RETURN QUERY
     WITH files AS (
         SELECT e->>'name' as path, b.content

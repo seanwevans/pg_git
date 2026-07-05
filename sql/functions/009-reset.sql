@@ -6,10 +6,9 @@ CREATE OR REPLACE FUNCTION pggit.reset_soft(
     p_commit TEXT
 ) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
-    -- Move HEAD to specified commit
-    UPDATE pggit.refs
-    SET commit_hash = p_commit
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Move the current branch (or the detached HEAD) to the specified commit,
+    -- matching `git reset`, which moves the branch HEAD is on rather than HEAD.
+    PERFORM pggit.advance_head(p_repo_id, p_commit);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -34,13 +33,10 @@ DECLARE
     v_tree_hash TEXT;
     v_blob_hash TEXT;
 BEGIN
-    -- Resolve p_commit: a ref name (e.g. the default 'HEAD' or a branch) maps to
-    -- its commit hash; otherwise it is already a commit hash. Without this the
-    -- default 'HEAD' is looked up as a literal commit hash, finds nothing, and
-    -- the file is wrongly dropped from the index instead of restored.
-    SELECT commit_hash INTO v_commit_hash
-    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_commit;
-    v_commit_hash := COALESCE(v_commit_hash, p_commit);
+    -- Resolve p_commit: a ref name (the default 'HEAD', a branch, etc.) maps to
+    -- its commit hash via resolve_ref, which follows the symbolic HEAD; anything
+    -- that is not a ref is treated as a literal commit hash.
+    v_commit_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_commit), p_commit);
 
     -- Get tree from commit
     SELECT tree_hash INTO v_tree_hash

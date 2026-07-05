@@ -36,10 +36,8 @@ DECLARE
     v_parent_hash TEXT;
     v_commit_hash TEXT;
 BEGIN
-    -- Get current HEAD
-    SELECT commit_hash INTO v_parent_hash
-    FROM pggit.refs
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Resolve the current HEAD commit (through the symbolic ref) to use as parent.
+    v_parent_hash := pggit.resolve_ref(p_repo_id, 'HEAD');
 
     -- Create tree from index
     v_tree_hash := pggit.create_tree_from_index(p_repo_id);
@@ -53,13 +51,9 @@ BEGIN
         p_message
     );
 
-    -- Update HEAD and branch reference
-    UPDATE pggit.refs SET commit_hash = v_commit_hash WHERE repo_id = p_repo_id AND name = 'HEAD';
-    UPDATE pggit.refs
-    SET commit_hash = v_commit_hash
-    WHERE repo_id = p_repo_id
-      AND commit_hash = v_parent_hash
-      AND name <> 'HEAD';
+    -- Advance only the current branch (or the detached HEAD). Other branches
+    -- that happened to share the old commit are left untouched.
+    PERFORM pggit.advance_head(p_repo_id, v_commit_hash);
 
     -- Clear index
     DELETE FROM index_entries WHERE repo_id = p_repo_id;

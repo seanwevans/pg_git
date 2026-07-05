@@ -56,6 +56,7 @@ CORE_TESTS := \
        test/sql/init.sql \
        test/sql/add_test.sql \
        test/sql/branch_test.sql \
+       test/sql/symbolic_head_test.sql \
        test/sql/commit_test.sql \
        test/sql/diff_test.sql \
        test/sql/merge_test.sql \

@@ -21,11 +21,10 @@ SELECT pggit.stage_file((current_setting('vars.repo_id')::int), 'a.txt', 'world'
 SELECT pggit.commit_index((current_setting('vars.repo_id')::int), 'tester', 'second') AS c2 \gset
 SELECT set_config('vars.c2', :'c2', false);
 
--- reset_soft: moves HEAD to the target commit.
+-- reset_soft: moves the current branch (HEAD tracks it) to the target commit.
 SELECT pggit.reset_soft((current_setting('vars.repo_id')::int), current_setting('vars.c1'));
 SELECT is(
-    (SELECT commit_hash FROM refs
-     WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'HEAD'),
+    pggit.resolve_ref((current_setting('vars.repo_id')::int), 'HEAD'),
     current_setting('vars.c1'),
     'reset_soft moves HEAD to the target commit'
 );
@@ -35,8 +34,7 @@ SELECT pggit.reset_soft((current_setting('vars.repo_id')::int), current_setting(
 SELECT pggit.stage_file((current_setting('vars.repo_id')::int), 'staged.txt', 'wip'::bytea);
 SELECT pggit.reset_mixed((current_setting('vars.repo_id')::int), current_setting('vars.c1'));
 SELECT is(
-    (SELECT commit_hash FROM refs
-     WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'HEAD'),
+    pggit.resolve_ref((current_setting('vars.repo_id')::int), 'HEAD'),
     current_setting('vars.c1'),
     'reset_mixed moves HEAD to the target commit'
 );

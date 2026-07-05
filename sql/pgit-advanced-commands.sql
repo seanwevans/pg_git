@@ -66,8 +66,8 @@ BEGIN
     v_tree_hash := pggit.create_tree_from_index(p_repo_id);
     
     INSERT INTO pggit.stash (repo_id, tree_hash, parent_hash, message, author)
-    VALUES (p_repo_id, v_tree_hash, 
-            (SELECT commit_hash FROM refs WHERE name = 'HEAD'),
+    VALUES (p_repo_id, v_tree_hash,
+            pggit.resolve_ref(p_repo_id, 'HEAD'),
             p_message, p_author)
     RETURNING stash_id INTO v_stash_id;
     
@@ -152,14 +152,9 @@ DECLARE
     v_commit_hash TEXT;
     v_blob_hash TEXT;
 BEGIN
-    -- Resolve commit (qualify commit_hash to avoid clash with the OUT column)
-    IF p_commit = 'HEAD' THEN
-        SELECT r.commit_hash INTO v_commit_hash
-        FROM refs r WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
-    ELSE
-        v_commit_hash := p_commit;
-    END IF;
-    
+    -- Resolve commit (HEAD follows the symbolic ref to the current branch tip).
+    v_commit_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_commit), p_commit);
+
     -- Get blob hash for file
     SELECT e->>'hash' INTO v_blob_hash
     FROM commits c

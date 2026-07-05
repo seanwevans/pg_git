@@ -24,7 +24,7 @@ SELECT results_eq(
 
 SELECT results_eq(
     $$SELECT commit_hash FROM pggit.refs WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'master'$$,
-    $$SELECT commit_hash FROM pggit.refs WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'HEAD'$$,
+    $$SELECT pggit.resolve_ref((current_setting('vars.repo_id')::int), 'HEAD')$$,
     'HEAD and master remain aligned after commit'
 );
 

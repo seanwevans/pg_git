@@ -9,12 +9,12 @@ CREATE OR REPLACE FUNCTION pggit.create_branch(
 DECLARE
     v_commit_hash TEXT;
 BEGIN
-    -- Get commit hash from start point or HEAD
+    -- Resolve the start point: HEAD by default, otherwise a ref name (branch/tag)
+    -- or a literal commit hash. Creating a branch does not move HEAD.
     IF p_start_point IS NULL THEN
-        SELECT commit_hash INTO v_commit_hash
-        FROM pggit.refs WHERE repo_id = p_repo_id AND name = 'HEAD';
+        v_commit_hash := pggit.resolve_ref(p_repo_id, 'HEAD');
     ELSE
-        v_commit_hash := p_start_point;
+        v_commit_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_start_point), p_start_point);
     END IF;
 
     -- Create branch reference
@@ -30,13 +30,17 @@ CREATE OR REPLACE FUNCTION pggit.list_branches(
     commit_hash TEXT,
     is_current BOOLEAN
 ) SET search_path = pggit, public AS $$
-SELECT 
+-- List direct branches (symbolic refs like HEAD are excluded). A branch is
+-- current when HEAD symbolically points at it, so identically-positioned
+-- branches are no longer all reported as current.
+SELECT
     r.name,
     r.commit_hash,
-    r.commit_hash = head.commit_hash AS is_current
+    r.name = pggit.current_branch(p_repo_id) AS is_current
 FROM pggit.refs r
-CROSS JOIN (SELECT commit_hash FROM pggit.refs WHERE repo_id = p_repo_id AND name = 'HEAD') head
-WHERE r.repo_id = p_repo_id AND r.name != 'HEAD'
+WHERE r.repo_id = p_repo_id
+  AND r.name <> 'HEAD'
+  AND r.commit_hash IS NOT NULL
 ORDER BY r.name;
 $$ LANGUAGE sql;
 
@@ -46,26 +50,24 @@ CREATE OR REPLACE FUNCTION pggit.checkout_branch(
     p_create BOOLEAN DEFAULT FALSE
 ) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
+    v_exists BOOLEAN;
     v_commit_hash TEXT;
 BEGIN
-    -- Get branch commit
-    SELECT commit_hash INTO v_commit_hash
-    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_branch_name;
-    
+    SELECT TRUE INTO v_exists
+    FROM pggit.refs
+    WHERE repo_id = p_repo_id AND name = p_branch_name AND commit_hash IS NOT NULL;
+
     IF NOT FOUND AND p_create THEN
-        -- Create new branch from HEAD
-        SELECT commit_hash INTO v_commit_hash
-        FROM pggit.refs WHERE repo_id = p_repo_id AND name = 'HEAD';
-        
+        -- Create the new branch at the current HEAD commit.
+        v_commit_hash := pggit.resolve_ref(p_repo_id, 'HEAD');
         INSERT INTO pggit.refs (repo_id, name, commit_hash)
         VALUES (p_repo_id, p_branch_name, v_commit_hash);
     ELSIF NOT FOUND THEN
         RAISE EXCEPTION 'Branch % does not exist', p_branch_name;
     END IF;
 
-    -- Update HEAD
-    UPDATE pggit.refs SET commit_hash = v_commit_hash
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Attach HEAD to the branch (symbolic), then report its commit.
+    PERFORM pggit.set_head_symbolic(p_repo_id, p_branch_name);
 
-    RETURN v_commit_hash;
+    RETURN pggit.resolve_ref(p_repo_id, p_branch_name);
 END;$$ LANGUAGE plpgsql;

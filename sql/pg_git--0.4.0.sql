@@ -42,12 +42,20 @@ CREATE TABLE pggit.commits (
     FOREIGN KEY (repo_id, parent_hash) REFERENCES pggit.commits(repo_id, hash)
 );
 
+-- A ref is either "direct" (commit_hash set) or "symbolic" (symbolic_target set,
+-- naming another ref). HEAD is normally symbolic, pointing at the current branch
+-- (e.g. 'master'); a detached HEAD is direct. Exactly one of the two columns is
+-- populated. This mirrors Git, where committing advances the branch HEAD points
+-- at rather than every branch that happens to share the old commit.
 CREATE TABLE pggit.refs (
     repo_id INTEGER REFERENCES pggit.repositories(id),
     name TEXT,
-    commit_hash TEXT NOT NULL,
+    commit_hash TEXT,
+    symbolic_target TEXT,
     PRIMARY KEY (repo_id, name),
-    FOREIGN KEY (repo_id, commit_hash) REFERENCES pggit.commits(repo_id, hash)
+    FOREIGN KEY (repo_id, commit_hash) REFERENCES pggit.commits(repo_id, hash),
+    CONSTRAINT refs_direct_xor_symbolic
+        CHECK ((commit_hash IS NOT NULL)::int + (symbolic_target IS NOT NULL)::int = 1)
 );
 
 -- Function to create a blob
@@ -114,17 +122,112 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to create/update a branch
+-- Function to create/update a direct ref (a branch or detached HEAD). Always
+-- clears symbolic_target so a previously symbolic ref becomes direct.
 CREATE OR REPLACE FUNCTION update_ref(
     p_repo_id INTEGER,
     p_name TEXT,
     p_commit_hash TEXT
 ) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
-    INSERT INTO pggit.refs (repo_id, name, commit_hash)
-    VALUES (p_repo_id, p_name, p_commit_hash)
+    INSERT INTO pggit.refs (repo_id, name, commit_hash, symbolic_target)
+    VALUES (p_repo_id, p_name, p_commit_hash, NULL)
     ON CONFLICT (repo_id, name) DO UPDATE
-    SET commit_hash = p_commit_hash;
+    SET commit_hash = EXCLUDED.commit_hash, symbolic_target = NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Resolve a ref name to a commit hash, following symbolic refs (e.g.
+-- HEAD -> 'master' -> <commit>). Returns NULL if the ref does not exist.
+CREATE OR REPLACE FUNCTION resolve_ref(
+    p_repo_id INTEGER,
+    p_name TEXT
+) RETURNS TEXT SET search_path = pggit, public AS $$
+DECLARE
+    v_name TEXT := p_name;
+    v_commit TEXT;
+    v_target TEXT;
+    v_depth INTEGER := 0;
+BEGIN
+    LOOP
+        SELECT commit_hash, symbolic_target INTO v_commit, v_target
+        FROM pggit.refs
+        WHERE repo_id = p_repo_id AND name = v_name;
+
+        IF NOT FOUND THEN
+            RETURN NULL;
+        END IF;
+        IF v_target IS NULL THEN
+            RETURN v_commit;
+        END IF;
+
+        v_name := v_target;
+        v_depth := v_depth + 1;
+        IF v_depth > 20 THEN
+            RAISE EXCEPTION 'symbolic ref chain too deep (cycle?) starting at %', p_name;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- The branch HEAD currently points at, or NULL when HEAD is detached.
+CREATE OR REPLACE FUNCTION current_branch(
+    p_repo_id INTEGER
+) RETURNS TEXT SET search_path = pggit, public AS $$
+    SELECT symbolic_target
+    FROM pggit.refs
+    WHERE repo_id = p_repo_id AND name = 'HEAD';
+$$ LANGUAGE sql STABLE;
+
+-- Point HEAD symbolically at a branch (the normal, attached state).
+CREATE OR REPLACE FUNCTION set_head_symbolic(
+    p_repo_id INTEGER,
+    p_branch TEXT
+) RETURNS VOID SET search_path = pggit, public AS $$
+BEGIN
+    INSERT INTO pggit.refs (repo_id, name, commit_hash, symbolic_target)
+    VALUES (p_repo_id, 'HEAD', NULL, p_branch)
+    ON CONFLICT (repo_id, name) DO UPDATE
+    SET commit_hash = NULL, symbolic_target = EXCLUDED.symbolic_target;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Point HEAD directly at a commit (detached HEAD).
+CREATE OR REPLACE FUNCTION set_head_detached(
+    p_repo_id INTEGER,
+    p_commit_hash TEXT
+) RETURNS VOID SET search_path = pggit, public AS $$
+BEGIN
+    INSERT INTO pggit.refs (repo_id, name, commit_hash, symbolic_target)
+    VALUES (p_repo_id, 'HEAD', p_commit_hash, NULL)
+    ON CONFLICT (repo_id, name) DO UPDATE
+    SET commit_hash = EXCLUDED.commit_hash, symbolic_target = NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Advance "where HEAD is" to a new commit: move the branch HEAD points at, or
+-- HEAD itself when detached. This is what commit/reset/merge use so that only
+-- the current branch moves, not every branch sharing the old commit.
+CREATE OR REPLACE FUNCTION advance_head(
+    p_repo_id INTEGER,
+    p_commit_hash TEXT
+) RETURNS VOID SET search_path = pggit, public AS $$
+DECLARE
+    v_branch TEXT;
+BEGIN
+    v_branch := pggit.current_branch(p_repo_id);
+    IF v_branch IS NULL THEN
+        -- Detached HEAD: move HEAD itself.
+        UPDATE pggit.refs
+        SET commit_hash = p_commit_hash, symbolic_target = NULL
+        WHERE repo_id = p_repo_id AND name = 'HEAD';
+    ELSE
+        -- Attached: move the branch HEAD points at (creating it if needed).
+        INSERT INTO pggit.refs (repo_id, name, commit_hash, symbolic_target)
+        VALUES (p_repo_id, v_branch, p_commit_hash, NULL)
+        ON CONFLICT (repo_id, name) DO UPDATE
+        SET commit_hash = EXCLUDED.commit_hash, symbolic_target = NULL;
+    END IF;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -245,11 +348,11 @@ BEGIN
         'Initial commit'
     );
     
-    -- Create master branch
+    -- Create master branch pointing at the initial commit
     PERFORM update_ref(v_repo_id, 'master', v_initial_commit);
 
-    -- Set HEAD to initial commit so subsequent commands work
-    PERFORM update_ref(v_repo_id, 'HEAD', v_initial_commit);
+    -- HEAD symbolically tracks master (the current branch)
+    PERFORM set_head_symbolic(v_repo_id, 'master');
     
     RETURN v_repo_id;
 END;
@@ -374,10 +477,8 @@ DECLARE
     v_parent_hash TEXT;
     v_commit_hash TEXT;
 BEGIN
-    -- Get current HEAD
-    SELECT commit_hash INTO v_parent_hash
-    FROM pggit.refs
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Resolve the current HEAD commit (through the symbolic ref) to use as parent.
+    v_parent_hash := pggit.resolve_ref(p_repo_id, 'HEAD');
 
     -- Create tree from index
     v_tree_hash := pggit.create_tree_from_index(p_repo_id);
@@ -391,13 +492,9 @@ BEGIN
         p_message
     );
 
-    -- Update HEAD and branch reference
-    UPDATE pggit.refs SET commit_hash = v_commit_hash WHERE repo_id = p_repo_id AND name = 'HEAD';
-    UPDATE pggit.refs
-    SET commit_hash = v_commit_hash
-    WHERE repo_id = p_repo_id
-      AND commit_hash = v_parent_hash
-      AND name <> 'HEAD';
+    -- Advance only the current branch (or the detached HEAD). Other branches
+    -- that happened to share the old commit are left untouched.
+    PERFORM pggit.advance_head(p_repo_id, v_commit_hash);
 
     -- Clear index
     DELETE FROM index_entries WHERE repo_id = p_repo_id;
@@ -423,10 +520,8 @@ CREATE OR REPLACE FUNCTION pggit.get_log(
 DECLARE
     v_head_commit TEXT;
 BEGIN
-    -- Get HEAD commit
-    SELECT commit_hash INTO v_head_commit
-    FROM pggit.refs
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Get HEAD commit (following the symbolic ref to the current branch tip)
+    v_head_commit := pggit.resolve_ref(p_repo_id, 'HEAD');
 
     RETURN QUERY
     WITH RECURSIVE commit_log AS (
@@ -498,11 +593,11 @@ DECLARE
     v_head_commit TEXT;
     v_head_tree TEXT;
 BEGIN
-    -- Get HEAD commit and tree
-    SELECT c.hash, c.tree_hash INTO v_head_commit, v_head_tree
-    FROM pggit.refs r
-    JOIN pggit.commits c ON r.repo_id = p_repo_id AND c.repo_id = r.repo_id AND r.commit_hash = c.hash
-    WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
+    -- Get HEAD commit and tree (resolving the symbolic HEAD to a commit)
+    v_head_commit := pggit.resolve_ref(p_repo_id, 'HEAD');
+    SELECT c.tree_hash INTO v_head_tree
+    FROM pggit.commits c
+    WHERE c.repo_id = p_repo_id AND c.hash = v_head_commit;
 
     RETURN QUERY
     -- Staged changes
@@ -562,12 +657,12 @@ CREATE OR REPLACE FUNCTION pggit.create_branch(
 DECLARE
     v_commit_hash TEXT;
 BEGIN
-    -- Get commit hash from start point or HEAD
+    -- Resolve the start point: HEAD by default, otherwise a ref name (branch/tag)
+    -- or a literal commit hash. Creating a branch does not move HEAD.
     IF p_start_point IS NULL THEN
-        SELECT commit_hash INTO v_commit_hash
-        FROM pggit.refs WHERE repo_id = p_repo_id AND name = 'HEAD';
+        v_commit_hash := pggit.resolve_ref(p_repo_id, 'HEAD');
     ELSE
-        v_commit_hash := p_start_point;
+        v_commit_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_start_point), p_start_point);
     END IF;
 
     -- Create branch reference
@@ -583,13 +678,17 @@ CREATE OR REPLACE FUNCTION pggit.list_branches(
     commit_hash TEXT,
     is_current BOOLEAN
 ) SET search_path = pggit, public AS $$
-SELECT 
+-- List direct branches (symbolic refs like HEAD are excluded). A branch is
+-- current when HEAD symbolically points at it, so identically-positioned
+-- branches are no longer all reported as current.
+SELECT
     r.name,
     r.commit_hash,
-    r.commit_hash = head.commit_hash AS is_current
+    r.name = pggit.current_branch(p_repo_id) AS is_current
 FROM pggit.refs r
-CROSS JOIN (SELECT commit_hash FROM pggit.refs WHERE repo_id = p_repo_id AND name = 'HEAD') head
-WHERE r.repo_id = p_repo_id AND r.name != 'HEAD'
+WHERE r.repo_id = p_repo_id
+  AND r.name <> 'HEAD'
+  AND r.commit_hash IS NOT NULL
 ORDER BY r.name;
 $$ LANGUAGE sql;
 
@@ -599,28 +698,26 @@ CREATE OR REPLACE FUNCTION pggit.checkout_branch(
     p_create BOOLEAN DEFAULT FALSE
 ) RETURNS TEXT SET search_path = pggit, public AS $$
 DECLARE
+    v_exists BOOLEAN;
     v_commit_hash TEXT;
 BEGIN
-    -- Get branch commit
-    SELECT commit_hash INTO v_commit_hash
-    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_branch_name;
-    
+    SELECT TRUE INTO v_exists
+    FROM pggit.refs
+    WHERE repo_id = p_repo_id AND name = p_branch_name AND commit_hash IS NOT NULL;
+
     IF NOT FOUND AND p_create THEN
-        -- Create new branch from HEAD
-        SELECT commit_hash INTO v_commit_hash
-        FROM pggit.refs WHERE repo_id = p_repo_id AND name = 'HEAD';
-        
+        -- Create the new branch at the current HEAD commit.
+        v_commit_hash := pggit.resolve_ref(p_repo_id, 'HEAD');
         INSERT INTO pggit.refs (repo_id, name, commit_hash)
         VALUES (p_repo_id, p_branch_name, v_commit_hash);
     ELSIF NOT FOUND THEN
         RAISE EXCEPTION 'Branch % does not exist', p_branch_name;
     END IF;
 
-    -- Update HEAD
-    UPDATE pggit.refs SET commit_hash = v_commit_hash
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Attach HEAD to the branch (symbolic), then report its commit.
+    PERFORM pggit.set_head_symbolic(p_repo_id, p_branch_name);
 
-    RETURN v_commit_hash;
+    RETURN pggit.resolve_ref(p_repo_id, p_branch_name);
 END;$$ LANGUAGE plpgsql;
 
 -- ===== sql/functions/007-merge.sql =====
@@ -690,25 +787,27 @@ DECLARE
     v_source_commit TEXT;
     v_target_commit TEXT;
 BEGIN
-    -- Resolve both branches, failing clearly if either is missing.
-    SELECT commit_hash INTO v_source_commit
-    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_source_branch;
+    -- Resolve both branches (following the symbolic HEAD), failing clearly if
+    -- either is missing.
+    v_source_commit := pggit.resolve_ref(p_repo_id, p_source_branch);
     IF v_source_commit IS NULL THEN
         RAISE EXCEPTION 'Branch % does not exist', p_source_branch;
     END IF;
 
-    SELECT commit_hash INTO v_target_commit
-    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_target_branch;
+    v_target_commit := pggit.resolve_ref(p_repo_id, p_target_branch);
     IF v_target_commit IS NULL THEN
         RAISE EXCEPTION 'Branch % does not exist', p_target_branch;
     END IF;
 
     -- Fast-forward is possible when the target commit is an ancestor of the
-    -- source commit; advance the target ref to the source commit.
+    -- source commit; advance the target to the source commit. Advancing 'HEAD'
+    -- moves the current branch; an explicit branch name moves that branch.
     IF pggit.can_fast_forward(v_target_commit, v_source_commit) THEN
-        UPDATE pggit.refs
-        SET commit_hash = v_source_commit
-        WHERE repo_id = p_repo_id AND name = p_target_branch;
+        IF p_target_branch = 'HEAD' THEN
+            PERFORM pggit.advance_head(p_repo_id, v_source_commit);
+        ELSE
+            PERFORM pggit.update_ref(p_repo_id, p_target_branch, v_source_commit);
+        END IF;
 
         RETURN v_source_commit;
     END IF;
@@ -835,10 +934,9 @@ CREATE OR REPLACE FUNCTION pggit.reset_soft(
     p_commit TEXT
 ) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
-    -- Move HEAD to specified commit
-    UPDATE pggit.refs
-    SET commit_hash = p_commit
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Move the current branch (or the detached HEAD) to the specified commit,
+    -- matching `git reset`, which moves the branch HEAD is on rather than HEAD.
+    PERFORM pggit.advance_head(p_repo_id, p_commit);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -863,13 +961,10 @@ DECLARE
     v_tree_hash TEXT;
     v_blob_hash TEXT;
 BEGIN
-    -- Resolve p_commit: a ref name (e.g. the default 'HEAD' or a branch) maps to
-    -- its commit hash; otherwise it is already a commit hash. Without this the
-    -- default 'HEAD' is looked up as a literal commit hash, finds nothing, and
-    -- the file is wrongly dropped from the index instead of restored.
-    SELECT commit_hash INTO v_commit_hash
-    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_commit;
-    v_commit_hash := COALESCE(v_commit_hash, p_commit);
+    -- Resolve p_commit: a ref name (the default 'HEAD', a branch, etc.) maps to
+    -- its commit hash via resolve_ref, which follows the symbolic HEAD; anything
+    -- that is not a ref is treated as a literal commit hash.
+    v_commit_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_commit), p_commit);
 
     -- Get tree from commit
     SELECT tree_hash INTO v_tree_hash
@@ -919,13 +1014,9 @@ CREATE OR REPLACE FUNCTION pggit.create_tag(
 DECLARE
     v_target_hash TEXT;
 BEGIN
-    -- Resolve target to commit hash
-    IF p_target = 'HEAD' THEN
-        SELECT commit_hash INTO v_target_hash
-        FROM pggit.refs WHERE repo_id = p_repo_id AND name = 'HEAD';
-    ELSE
-        v_target_hash := p_target;
-    END IF;
+    -- Resolve target to a commit hash: a ref name (the default 'HEAD', a branch)
+    -- via resolve_ref, otherwise a literal commit hash.
+    v_target_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_target), p_target);
 
     INSERT INTO pggit.tags (repo_id, name, target_hash, tagger, message)
     VALUES (p_repo_id, p_name, v_target_hash, p_tagger, p_message);
@@ -1051,9 +1142,8 @@ BEGIN
     FROM pggit.remotes
     WHERE repo_id = p_repo_id AND name = p_remote_name;
 
-    -- Get local ref
-    SELECT commit_hash INTO v_commit_hash
-    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_ref_name;
+    -- Get local ref (resolving symbolic refs such as HEAD)
+    v_commit_hash := pggit.resolve_ref(p_repo_id, p_ref_name);
 
     -- In a real implementation, this would:
     -- 1. Connect to remote database
@@ -1334,8 +1424,10 @@ BEGIN
     -- recursive term, so the different edge types (commit->parent, commit->tree,
     -- tree->entries) are expanded in one LATERAL branch off the working row.
     WITH RECURSIVE reachable(object_type, hash) AS (
-        -- Start from pggit.refs
-        SELECT 'commit'::TEXT, commit_hash FROM pggit.refs WHERE repo_id = p_repo_id
+        -- Start from pggit.refs (only direct refs; symbolic refs such as HEAD
+        -- have a NULL commit_hash and are reached through their target branch).
+        SELECT 'commit'::TEXT, commit_hash FROM pggit.refs
+        WHERE repo_id = p_repo_id AND commit_hash IS NOT NULL
         UNION
         SELECT nxt.object_type, nxt.hash
         FROM reachable r
@@ -1544,8 +1636,8 @@ BEGIN
     v_tree_hash := pggit.create_tree_from_index(p_repo_id);
     
     INSERT INTO pggit.stash (repo_id, tree_hash, parent_hash, message, author)
-    VALUES (p_repo_id, v_tree_hash, 
-            (SELECT commit_hash FROM refs WHERE name = 'HEAD'),
+    VALUES (p_repo_id, v_tree_hash,
+            pggit.resolve_ref(p_repo_id, 'HEAD'),
             p_message, p_author)
     RETURNING stash_id INTO v_stash_id;
     
@@ -1630,14 +1722,9 @@ DECLARE
     v_commit_hash TEXT;
     v_blob_hash TEXT;
 BEGIN
-    -- Resolve commit (qualify commit_hash to avoid clash with the OUT column)
-    IF p_commit = 'HEAD' THEN
-        SELECT r.commit_hash INTO v_commit_hash
-        FROM refs r WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
-    ELSE
-        v_commit_hash := p_commit;
-    END IF;
-    
+    -- Resolve commit (HEAD follows the symbolic ref to the current branch tip).
+    v_commit_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_commit), p_commit);
+
     -- Get blob hash for file
     SELECT e->>'hash' INTO v_blob_hash
     FROM commits c
@@ -1685,17 +1772,12 @@ DECLARE
     v_header BYTEA;
     v_footer BYTEA;
 BEGIN
-    -- Resolve tree-ish to tree hash (scoped to this repository).
-    IF p_tree_ish = 'HEAD' THEN
-        SELECT tree_hash INTO v_tree_hash
-        FROM commits c
-        JOIN refs r ON c.repo_id = r.repo_id AND c.hash = r.commit_hash
-        WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
-    ELSE
-        SELECT tree_hash INTO v_tree_hash
-        FROM commits
-        WHERE repo_id = p_repo_id AND hash = p_tree_ish;
-    END IF;
+    -- Resolve tree-ish to a tree hash. A ref name (the default 'HEAD', a branch)
+    -- resolves through resolve_ref; otherwise treat it as a literal commit hash.
+    SELECT tree_hash INTO v_tree_hash
+    FROM commits
+    WHERE repo_id = p_repo_id
+      AND hash = COALESCE(pggit.resolve_ref(p_repo_id, p_tree_ish), p_tree_ish);
 
     -- Initialize archive based on format
     CASE p_format
@@ -2010,16 +2092,14 @@ BEGIN
     v_new_commit := pggit.create_commit(
         p_repo_id,
         v_tree_hash,
-        (SELECT commit_hash FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD'),
+        pggit.resolve_ref(p_repo_id, 'HEAD'),
         v_author,
         v_message || ' (cherry-picked from ' || p_commit_hash || ')'
     );
-    
-    -- Update HEAD
-    UPDATE refs
-    SET commit_hash = v_new_commit
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
-    
+
+    -- Advance the current branch (or detached HEAD) to the new commit.
+    PERFORM pggit.advance_head(p_repo_id, v_new_commit);
+
     RETURN v_new_commit;
 END;
 $$ LANGUAGE plpgsql;
@@ -2100,11 +2180,10 @@ BEGIN
     FROM commits c
     WHERE c.repo_id = p_repo_id AND hash = p_commit_hash;
 
-    -- The revert applies on top of the current HEAD tree.
+    -- The revert applies on top of the current HEAD tree (resolving symbolic HEAD).
     SELECT c.tree_hash INTO v_head_tree
-    FROM refs r
-    JOIN commits c ON c.repo_id = r.repo_id AND c.hash = r.commit_hash
-    WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
+    FROM commits c
+    WHERE c.repo_id = p_repo_id AND c.hash = pggit.resolve_ref(p_repo_id, 'HEAD');
 
     -- Reverse the parent->commit change onto HEAD.
     v_new_tree := pggit.apply_inverse_diff(
@@ -2114,15 +2193,13 @@ BEGIN
     v_new_commit := pggit.create_commit(
         p_repo_id,
         v_new_tree,
-        (SELECT commit_hash FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD'),
+        pggit.resolve_ref(p_repo_id, 'HEAD'),
         current_user,
         'Revert "' || v_message || '"'
     );
 
-    -- Update HEAD
-    UPDATE refs
-    SET commit_hash = v_new_commit
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Advance the current branch (or detached HEAD) to the revert commit.
+    PERFORM pggit.advance_head(p_repo_id, v_new_commit);
 
     RETURN v_new_commit;
 END;
@@ -2273,14 +2350,9 @@ CREATE OR REPLACE FUNCTION pggit.grep(
 DECLARE
     v_commit_hash TEXT;
 BEGIN
-    -- Resolve commit
-    IF p_commit = 'HEAD' THEN
-        SELECT commit_hash INTO v_commit_hash
-        FROM refs WHERE repo_id = p_repo_id AND name = 'HEAD';
-    ELSE
-        v_commit_hash := p_commit;
-    END IF;
-    
+    -- Resolve commit (HEAD follows the symbolic ref to the current branch tip).
+    v_commit_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_commit), p_commit);
+
     RETURN QUERY
     WITH files AS (
         SELECT e->>'name' as path, b.content
@@ -3626,12 +3698,9 @@ DECLARE
     v_since_hash TEXT;
     v_until_hash TEXT;
 BEGIN
-    -- Resolve commit references. refs.commit_hash is qualified because
-    -- "commit_hash" is also a RETURNS TABLE OUT parameter, and the lookup is
-    -- scoped to this repository's HEAD rather than any repo's HEAD.
+    -- Resolve commit references (HEAD follows the symbolic ref for this repo).
     IF p_until = 'HEAD' THEN
-        SELECT refs.commit_hash INTO v_until_hash
-        FROM refs WHERE refs.repo_id = p_repo_id AND name = 'HEAD';
+        v_until_hash := pggit.resolve_ref(p_repo_id, 'HEAD');
     ELSE
         v_until_hash := p_until;
     END IF;

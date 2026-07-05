@@ -30,7 +30,7 @@ SELECT lives_ok(
 );
 
 SELECT results_eq(
-    $$SELECT commit_hash FROM refs WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'HEAD'$$,
+    $$SELECT pggit.resolve_ref((current_setting('vars.repo_id')::int), 'HEAD')$$,
     $$SELECT commit_hash FROM refs WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'test-branch'$$,
     'HEAD points to correct commit after checkout'
 );

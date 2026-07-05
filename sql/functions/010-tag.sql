@@ -21,13 +21,9 @@ CREATE OR REPLACE FUNCTION pggit.create_tag(
 DECLARE
     v_target_hash TEXT;
 BEGIN
-    -- Resolve target to commit hash
-    IF p_target = 'HEAD' THEN
-        SELECT commit_hash INTO v_target_hash
-        FROM pggit.refs WHERE repo_id = p_repo_id AND name = 'HEAD';
-    ELSE
-        v_target_hash := p_target;
-    END IF;
+    -- Resolve target to a commit hash: a ref name (the default 'HEAD', a branch)
+    -- via resolve_ref, otherwise a literal commit hash.
+    v_target_hash := COALESCE(pggit.resolve_ref(p_repo_id, p_target), p_target);
 
     INSERT INTO pggit.tags (repo_id, name, target_hash, tagger, message)
     VALUES (p_repo_id, p_name, v_target_hash, p_tagger, p_message);

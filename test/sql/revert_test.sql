@@ -37,8 +37,7 @@ SELECT isnt(
 
 -- HEAD advanced to the revert commit.
 SELECT is(
-    (SELECT commit_hash FROM refs
-     WHERE repo_id = (current_setting('vars.repo_id')::int) AND name = 'HEAD'),
+    pggit.resolve_ref((current_setting('vars.repo_id')::int), 'HEAD'),
     current_setting('vars.revert_commit'),
     'HEAD points at the revert commit'
 );
