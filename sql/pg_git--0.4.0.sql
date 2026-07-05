@@ -2485,7 +2485,8 @@ BEGIN
                'base' as source
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_base_tree
+        -- trees.hash is qualified: "hash" is also a RETURNS TABLE OUT parameter.
+        WHERE trees.hash = p_base_tree
         
         UNION ALL
         
@@ -2495,7 +2496,7 @@ BEGIN
                'ours' as source
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_ours_tree
+        WHERE trees.hash = p_ours_tree
         
         UNION ALL
         
@@ -2505,25 +2506,28 @@ BEGIN
                'theirs' as source
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_theirs_tree
+        WHERE trees.hash = p_theirs_tree
     ),
     -- Analyze changes
     analysis AS (
-        SELECT DISTINCT path,
+        SELECT DISTINCT all_paths.path,
                bool_or(source = 'base') as in_base,
                bool_or(source = 'ours') as in_ours,
                bool_or(source = 'theirs') as in_theirs,
-               max(CASE WHEN source = 'base' THEN hash END) as base_hash,
-               max(CASE WHEN source = 'ours' THEN hash END) as ours_hash,
-               max(CASE WHEN source = 'theirs' THEN hash END) as theirs_hash,
-               max(CASE WHEN source = 'base' THEN mode END) as base_mode,
-               max(CASE WHEN source = 'ours' THEN mode END) as ours_mode,
-               max(CASE WHEN source = 'theirs' THEN mode END) as theirs_mode
+               -- all_paths.hash / all_paths.mode are qualified: "hash" and
+               -- "mode" are also RETURNS TABLE OUT parameters.
+               max(CASE WHEN source = 'base' THEN all_paths.hash END) as base_hash,
+               max(CASE WHEN source = 'ours' THEN all_paths.hash END) as ours_hash,
+               max(CASE WHEN source = 'theirs' THEN all_paths.hash END) as theirs_hash,
+               max(CASE WHEN source = 'base' THEN all_paths.mode END) as base_mode,
+               max(CASE WHEN source = 'ours' THEN all_paths.mode END) as ours_mode,
+               max(CASE WHEN source = 'theirs' THEN all_paths.mode END) as theirs_mode
         FROM all_paths
-        GROUP BY path
+        GROUP BY all_paths.path
     )
-    SELECT path,
-           CASE 
+    -- analysis.path is qualified: "path" is also a RETURNS TABLE OUT parameter.
+    SELECT analysis.path,
+           CASE
                WHEN NOT in_base AND in_ours AND in_theirs AND ours_hash != theirs_hash THEN 2  -- conflict
                WHEN in_base AND in_ours AND in_theirs AND base_hash != ours_hash AND base_hash != theirs_hash THEN 2  -- conflict
                ELSE 0  -- no conflict
@@ -3440,10 +3444,12 @@ BEGIN
     END IF;
 
     -- Get key info
+    -- gpg_keys.key_id is qualified: "key_id" is also a RETURNS TABLE OUT
+    -- parameter and would otherwise be an ambiguous column reference.
     SELECT * INTO v_key
     FROM pggit.gpg_keys
     WHERE repo_id = p_repo_id
-    AND key_id = v_signature.key_id;
+    AND gpg_keys.key_id = v_signature.key_id;
 
     IF NOT FOUND THEN
         RETURN QUERY
@@ -3554,11 +3560,12 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Get key info
+    -- Get key info. gpg_keys.key_id is qualified: "key_id" is also a RETURNS
+    -- TABLE OUT parameter and would otherwise be an ambiguous column reference.
     SELECT * INTO v_key
     FROM pggit.gpg_keys
     WHERE repo_id = p_repo_id
-    AND key_id = v_signature.key_id;
+    AND gpg_keys.key_id = v_signature.key_id;
 
     -- Check trust level
     IF p_require_trust_level IS NOT NULL AND 
@@ -3619,10 +3626,12 @@ DECLARE
     v_since_hash TEXT;
     v_until_hash TEXT;
 BEGIN
-    -- Resolve commit references
+    -- Resolve commit references. refs.commit_hash is qualified because
+    -- "commit_hash" is also a RETURNS TABLE OUT parameter, and the lookup is
+    -- scoped to this repository's HEAD rather than any repo's HEAD.
     IF p_until = 'HEAD' THEN
-        SELECT commit_hash INTO v_until_hash
-        FROM refs WHERE name = 'HEAD';
+        SELECT refs.commit_hash INTO v_until_hash
+        FROM refs WHERE refs.repo_id = p_repo_id AND name = 'HEAD';
     ELSE
         v_until_hash := p_until;
     END IF;
@@ -3630,11 +3639,12 @@ BEGIN
     -- Get commit history with changes
     RETURN QUERY
     WITH RECURSIVE commit_history AS (
-        -- Start from until commit
-        SELECT repo_id, hash, parent_hash, author, timestamp, message, tree_hash
-        FROM commits
-        WHERE repo_id = p_repo_id
-          AND hash = v_until_hash
+        -- Start from until commit. Columns are qualified because author,
+        -- timestamp and message are also RETURNS TABLE OUT parameters.
+        SELECT c.repo_id, c.hash, c.parent_hash, c.author, c.timestamp, c.message, c.tree_hash
+        FROM commits c
+        WHERE c.repo_id = p_repo_id
+          AND c.hash = v_until_hash
 
         UNION ALL
 
@@ -3687,7 +3697,7 @@ BEGIN
     )
     SELECT *
     FROM file_changes
-    ORDER BY timestamp DESC, commit_hash, path;
+    ORDER BY file_changes.timestamp DESC, file_changes.commit_hash, file_changes.path;
 END;
 $$ LANGUAGE plpgsql;
 

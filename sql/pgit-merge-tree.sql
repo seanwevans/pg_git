@@ -22,7 +22,8 @@ BEGIN
                'base' as source
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_base_tree
+        -- trees.hash is qualified: "hash" is also a RETURNS TABLE OUT parameter.
+        WHERE trees.hash = p_base_tree
         
         UNION ALL
         
@@ -32,7 +33,7 @@ BEGIN
                'ours' as source
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_ours_tree
+        WHERE trees.hash = p_ours_tree
         
         UNION ALL
         
@@ -42,25 +43,28 @@ BEGIN
                'theirs' as source
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_theirs_tree
+        WHERE trees.hash = p_theirs_tree
     ),
     -- Analyze changes
     analysis AS (
-        SELECT DISTINCT path,
+        SELECT DISTINCT all_paths.path,
                bool_or(source = 'base') as in_base,
                bool_or(source = 'ours') as in_ours,
                bool_or(source = 'theirs') as in_theirs,
-               max(CASE WHEN source = 'base' THEN hash END) as base_hash,
-               max(CASE WHEN source = 'ours' THEN hash END) as ours_hash,
-               max(CASE WHEN source = 'theirs' THEN hash END) as theirs_hash,
-               max(CASE WHEN source = 'base' THEN mode END) as base_mode,
-               max(CASE WHEN source = 'ours' THEN mode END) as ours_mode,
-               max(CASE WHEN source = 'theirs' THEN mode END) as theirs_mode
+               -- all_paths.hash / all_paths.mode are qualified: "hash" and
+               -- "mode" are also RETURNS TABLE OUT parameters.
+               max(CASE WHEN source = 'base' THEN all_paths.hash END) as base_hash,
+               max(CASE WHEN source = 'ours' THEN all_paths.hash END) as ours_hash,
+               max(CASE WHEN source = 'theirs' THEN all_paths.hash END) as theirs_hash,
+               max(CASE WHEN source = 'base' THEN all_paths.mode END) as base_mode,
+               max(CASE WHEN source = 'ours' THEN all_paths.mode END) as ours_mode,
+               max(CASE WHEN source = 'theirs' THEN all_paths.mode END) as theirs_mode
         FROM all_paths
-        GROUP BY path
+        GROUP BY all_paths.path
     )
-    SELECT path,
-           CASE 
+    -- analysis.path is qualified: "path" is also a RETURNS TABLE OUT parameter.
+    SELECT analysis.path,
+           CASE
                WHEN NOT in_base AND in_ours AND in_theirs AND ours_hash != theirs_hash THEN 2  -- conflict
                WHEN in_base AND in_ours AND in_theirs AND base_hash != ours_hash AND base_hash != theirs_hash THEN 2  -- conflict
                ELSE 0  -- no conflict
