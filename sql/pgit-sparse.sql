@@ -91,15 +91,18 @@ BEGIN
                e->>'type' as type
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_tree_hash
-        
+        WHERE repo_id = p_repo_id AND hash = p_tree_hash
+
         UNION ALL
-        
-        SELECT tf.path || '/' || e->>'name',
+
+        -- Parenthesize (e->>'name'): the || operator binds tighter than ->>,
+        -- so without parens this parses as (tf.path || '/' || e) ->> 'name'
+        -- and fails to type-check.
+        SELECT tf.path || '/' || (e->>'name'),
                e->>'hash',
                e->>'type'
         FROM tree_files tf
-        JOIN trees t ON tf.hash = t.hash,
+        JOIN trees t ON t.repo_id = p_repo_id AND tf.hash = t.hash,
         jsonb_array_elements(t.entries) e
         WHERE tf.type = 'tree'
     )

@@ -59,8 +59,10 @@ CORE_TESTS := \
        test/sql/commit_test.sql \
        test/sql/diff_test.sql \
        test/sql/merge_test.sql \
+       test/sql/merge_conflicts_test.sql \
        test/sql/remote_test.sql \
        test/sql/advanced_test.sql \
+       test/sql/reset_test.sql \
        test/sql/search_path_qualification_test.sql \
        test/sql/gc_test.sql \
        test/sql/optimize_indexes_test.sql
