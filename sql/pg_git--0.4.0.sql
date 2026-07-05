@@ -859,12 +859,21 @@ CREATE OR REPLACE FUNCTION pggit.reset_file(
     p_commit TEXT DEFAULT 'HEAD'
 ) RETURNS VOID SET search_path = pggit, public AS $$
 DECLARE
+    v_commit_hash TEXT;
     v_tree_hash TEXT;
     v_blob_hash TEXT;
 BEGIN
+    -- Resolve p_commit: a ref name (e.g. the default 'HEAD' or a branch) maps to
+    -- its commit hash; otherwise it is already a commit hash. Without this the
+    -- default 'HEAD' is looked up as a literal commit hash, finds nothing, and
+    -- the file is wrongly dropped from the index instead of restored.
+    SELECT commit_hash INTO v_commit_hash
+    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_commit;
+    v_commit_hash := COALESCE(v_commit_hash, p_commit);
+
     -- Get tree from commit
     SELECT tree_hash INTO v_tree_hash
-    FROM pggit.commits WHERE repo_id = p_repo_id AND hash = p_commit;
+    FROM pggit.commits WHERE repo_id = p_repo_id AND hash = v_commit_hash;
     
     -- Get blob hash from tree
     SELECT (e->>'hash')::TEXT INTO v_blob_hash
@@ -1154,6 +1163,21 @@ CREATE TABLE pggit.merge_conflicts (
     FOREIGN KEY (repo_id, resolution_blob_hash) REFERENCES pggit.blobs(repo_id, hash)
 );
 
+-- A three-way merge of a single path needs no manual resolution when either
+-- side is unchanged from the base (take the other side) or both sides resolve
+-- to the same blob. Anything else is a genuine conflict. NULL means the file is
+-- absent on that side (added or deleted), so IS [NOT] DISTINCT FROM is used to
+-- compare hashes without tripping over NULL semantics.
+CREATE OR REPLACE FUNCTION pggit.can_auto_merge(
+    p_our_hash TEXT,
+    p_their_hash TEXT,
+    p_base_hash TEXT
+) RETURNS BOOLEAN IMMUTABLE SET search_path = pggit, public AS $$
+    SELECT p_our_hash IS NOT DISTINCT FROM p_their_hash   -- both sides agree
+        OR p_our_hash IS NOT DISTINCT FROM p_base_hash    -- we didn't change it
+        OR p_their_hash IS NOT DISTINCT FROM p_base_hash; -- they didn't change it
+$$ LANGUAGE sql;
+
 CREATE OR REPLACE FUNCTION pggit.detect_conflicts(
     p_repo_id INTEGER,
     p_our_commit TEXT,
@@ -1164,38 +1188,50 @@ CREATE OR REPLACE FUNCTION pggit.detect_conflicts(
 ) SET search_path = pggit, public AS $$
 DECLARE
     v_base_commit TEXT;
+    v_our_tree TEXT;
+    v_their_tree TEXT;
+    v_base_tree TEXT;
 BEGIN
-    -- Find merge base
-    v_base_commit := pggit.find_merge_base(p_repo_id, p_our_commit, p_their_commit);
-    
+    -- Find merge base (find_merge_base identifies the repo from the commits).
+    v_base_commit := pggit.find_merge_base(p_our_commit, p_their_commit);
+
+    -- Resolve each commit to its tree. get_tree_files expects a tree hash, not
+    -- a commit hash. A missing/NULL commit yields a NULL tree, i.e. no files.
+    SELECT tree_hash INTO v_our_tree
+    FROM pggit.commits WHERE repo_id = p_repo_id AND hash = p_our_commit;
+    SELECT tree_hash INTO v_their_tree
+    FROM pggit.commits WHERE repo_id = p_repo_id AND hash = p_their_commit;
+    SELECT tree_hash INTO v_base_tree
+    FROM pggit.commits WHERE repo_id = p_repo_id AND hash = v_base_commit;
+
     RETURN QUERY
+    -- Columns are qualified via the function alias: the RETURNS TABLE OUT
+    -- parameter "path" would otherwise shadow the unqualified column name.
     WITH our_files AS (
-        SELECT path, blob_hash
-        FROM pggit.get_tree_files(p_our_commit)
+        SELECT gtf.path, gtf.blob_hash
+        FROM pggit.get_tree_files(p_repo_id, v_our_tree) gtf
     ),
     their_files AS (
-        SELECT path, blob_hash
-        FROM pggit.get_tree_files(p_their_commit)
+        SELECT gtf.path, gtf.blob_hash
+        FROM pggit.get_tree_files(p_repo_id, v_their_tree) gtf
     ),
     base_files AS (
-        SELECT path, blob_hash
-        FROM pggit.get_tree_files(v_base_commit)
+        SELECT gtf.path, gtf.blob_hash
+        FROM pggit.get_tree_files(p_repo_id, v_base_tree) gtf
     )
     SELECT DISTINCT f.path,
            CASE
-               WHEN o.blob_hash != t.blob_hash 
-                    AND b.blob_hash IS NOT NULL THEN 'content'
-               WHEN o.blob_hash IS NULL 
-                    AND t.blob_hash IS NOT NULL THEN 'deleted_modified'
-               ELSE 'add_add'
+               WHEN o.blob_hash IS NULL AND t.blob_hash IS NOT NULL THEN 'deleted_modified'
+               WHEN t.blob_hash IS NULL AND o.blob_hash IS NOT NULL THEN 'modified_deleted'
+               WHEN b.blob_hash IS NULL THEN 'add_add'
+               ELSE 'content'
            END as conflict_type
-    FROM (SELECT path FROM our_files 
-          UNION SELECT path FROM their_files) f
+    FROM (SELECT our_files.path FROM our_files
+          UNION SELECT their_files.path FROM their_files) f
     LEFT JOIN our_files o ON f.path = o.path
     LEFT JOIN their_files t ON f.path = t.path
     LEFT JOIN base_files b ON f.path = b.path
-    WHERE (o.blob_hash != t.blob_hash OR o.blob_hash IS NULL OR t.blob_hash IS NULL)
-    AND NOT pggit.can_auto_merge(o.blob_hash, t.blob_hash, b.blob_hash);
+    WHERE NOT pggit.can_auto_merge(o.blob_hash, t.blob_hash, b.blob_hash);
 END;$$ LANGUAGE plpgsql;
 
 -- ===== sql/functions/014-https.sql =====
@@ -3147,15 +3183,18 @@ BEGIN
                e->>'type' as type
         FROM trees,
         jsonb_array_elements(entries) e
-        WHERE hash = p_tree_hash
-        
+        WHERE repo_id = p_repo_id AND hash = p_tree_hash
+
         UNION ALL
-        
-        SELECT tf.path || '/' || e->>'name',
+
+        -- Parenthesize (e->>'name'): the || operator binds tighter than ->>,
+        -- so without parens this parses as (tf.path || '/' || e) ->> 'name'
+        -- and fails to type-check.
+        SELECT tf.path || '/' || (e->>'name'),
                e->>'hash',
                e->>'type'
         FROM tree_files tf
-        JOIN trees t ON tf.hash = t.hash,
+        JOIN trees t ON t.repo_id = p_repo_id AND tf.hash = t.hash,
         jsonb_array_elements(t.entries) e
         WHERE tf.type = 'tree'
     )
