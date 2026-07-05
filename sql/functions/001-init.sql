@@ -24,11 +24,11 @@ BEGIN
         'Initial commit'
     );
     
-    -- Create master branch
+    -- Create master branch pointing at the initial commit
     PERFORM update_ref(v_repo_id, 'master', v_initial_commit);
 
-    -- Set HEAD to initial commit so subsequent commands work
-    PERFORM update_ref(v_repo_id, 'HEAD', v_initial_commit);
+    -- HEAD symbolically tracks master (the current branch)
+    PERFORM set_head_symbolic(v_repo_id, 'master');
     
     RETURN v_repo_id;
 END;

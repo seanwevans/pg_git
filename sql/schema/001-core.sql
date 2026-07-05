@@ -36,12 +36,20 @@ CREATE TABLE pggit.commits (
     FOREIGN KEY (repo_id, parent_hash) REFERENCES pggit.commits(repo_id, hash)
 );
 
+-- A ref is either "direct" (commit_hash set) or "symbolic" (symbolic_target set,
+-- naming another ref). HEAD is normally symbolic, pointing at the current branch
+-- (e.g. 'master'); a detached HEAD is direct. Exactly one of the two columns is
+-- populated. This mirrors Git, where committing advances the branch HEAD points
+-- at rather than every branch that happens to share the old commit.
 CREATE TABLE pggit.refs (
     repo_id INTEGER REFERENCES pggit.repositories(id),
     name TEXT,
-    commit_hash TEXT NOT NULL,
+    commit_hash TEXT,
+    symbolic_target TEXT,
     PRIMARY KEY (repo_id, name),
-    FOREIGN KEY (repo_id, commit_hash) REFERENCES pggit.commits(repo_id, hash)
+    FOREIGN KEY (repo_id, commit_hash) REFERENCES pggit.commits(repo_id, hash),
+    CONSTRAINT refs_direct_xor_symbolic
+        CHECK ((commit_hash IS NOT NULL)::int + (symbolic_target IS NOT NULL)::int = 1)
 );
 
 -- Function to create a blob
@@ -108,17 +116,112 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to create/update a branch
+-- Function to create/update a direct ref (a branch or detached HEAD). Always
+-- clears symbolic_target so a previously symbolic ref becomes direct.
 CREATE OR REPLACE FUNCTION update_ref(
     p_repo_id INTEGER,
     p_name TEXT,
     p_commit_hash TEXT
 ) RETURNS VOID SET search_path = pggit, public AS $$
 BEGIN
-    INSERT INTO pggit.refs (repo_id, name, commit_hash)
-    VALUES (p_repo_id, p_name, p_commit_hash)
+    INSERT INTO pggit.refs (repo_id, name, commit_hash, symbolic_target)
+    VALUES (p_repo_id, p_name, p_commit_hash, NULL)
     ON CONFLICT (repo_id, name) DO UPDATE
-    SET commit_hash = p_commit_hash;
+    SET commit_hash = EXCLUDED.commit_hash, symbolic_target = NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Resolve a ref name to a commit hash, following symbolic refs (e.g.
+-- HEAD -> 'master' -> <commit>). Returns NULL if the ref does not exist.
+CREATE OR REPLACE FUNCTION resolve_ref(
+    p_repo_id INTEGER,
+    p_name TEXT
+) RETURNS TEXT SET search_path = pggit, public AS $$
+DECLARE
+    v_name TEXT := p_name;
+    v_commit TEXT;
+    v_target TEXT;
+    v_depth INTEGER := 0;
+BEGIN
+    LOOP
+        SELECT commit_hash, symbolic_target INTO v_commit, v_target
+        FROM pggit.refs
+        WHERE repo_id = p_repo_id AND name = v_name;
+
+        IF NOT FOUND THEN
+            RETURN NULL;
+        END IF;
+        IF v_target IS NULL THEN
+            RETURN v_commit;
+        END IF;
+
+        v_name := v_target;
+        v_depth := v_depth + 1;
+        IF v_depth > 20 THEN
+            RAISE EXCEPTION 'symbolic ref chain too deep (cycle?) starting at %', p_name;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- The branch HEAD currently points at, or NULL when HEAD is detached.
+CREATE OR REPLACE FUNCTION current_branch(
+    p_repo_id INTEGER
+) RETURNS TEXT SET search_path = pggit, public AS $$
+    SELECT symbolic_target
+    FROM pggit.refs
+    WHERE repo_id = p_repo_id AND name = 'HEAD';
+$$ LANGUAGE sql STABLE;
+
+-- Point HEAD symbolically at a branch (the normal, attached state).
+CREATE OR REPLACE FUNCTION set_head_symbolic(
+    p_repo_id INTEGER,
+    p_branch TEXT
+) RETURNS VOID SET search_path = pggit, public AS $$
+BEGIN
+    INSERT INTO pggit.refs (repo_id, name, commit_hash, symbolic_target)
+    VALUES (p_repo_id, 'HEAD', NULL, p_branch)
+    ON CONFLICT (repo_id, name) DO UPDATE
+    SET commit_hash = NULL, symbolic_target = EXCLUDED.symbolic_target;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Point HEAD directly at a commit (detached HEAD).
+CREATE OR REPLACE FUNCTION set_head_detached(
+    p_repo_id INTEGER,
+    p_commit_hash TEXT
+) RETURNS VOID SET search_path = pggit, public AS $$
+BEGIN
+    INSERT INTO pggit.refs (repo_id, name, commit_hash, symbolic_target)
+    VALUES (p_repo_id, 'HEAD', p_commit_hash, NULL)
+    ON CONFLICT (repo_id, name) DO UPDATE
+    SET commit_hash = EXCLUDED.commit_hash, symbolic_target = NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Advance "where HEAD is" to a new commit: move the branch HEAD points at, or
+-- HEAD itself when detached. This is what commit/reset/merge use so that only
+-- the current branch moves, not every branch sharing the old commit.
+CREATE OR REPLACE FUNCTION advance_head(
+    p_repo_id INTEGER,
+    p_commit_hash TEXT
+) RETURNS VOID SET search_path = pggit, public AS $$
+DECLARE
+    v_branch TEXT;
+BEGIN
+    v_branch := pggit.current_branch(p_repo_id);
+    IF v_branch IS NULL THEN
+        -- Detached HEAD: move HEAD itself.
+        UPDATE pggit.refs
+        SET commit_hash = p_commit_hash, symbolic_target = NULL
+        WHERE repo_id = p_repo_id AND name = 'HEAD';
+    ELSE
+        -- Attached: move the branch HEAD points at (creating it if needed).
+        INSERT INTO pggit.refs (repo_id, name, commit_hash, symbolic_target)
+        VALUES (p_repo_id, v_branch, p_commit_hash, NULL)
+        ON CONFLICT (repo_id, name) DO UPDATE
+        SET commit_hash = EXCLUDED.commit_hash, symbolic_target = NULL;
+    END IF;
 END;
 $$ LANGUAGE plpgsql;
 

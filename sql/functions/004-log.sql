@@ -15,10 +15,8 @@ CREATE OR REPLACE FUNCTION pggit.get_log(
 DECLARE
     v_head_commit TEXT;
 BEGIN
-    -- Get HEAD commit
-    SELECT commit_hash INTO v_head_commit
-    FROM pggit.refs
-    WHERE repo_id = p_repo_id AND name = 'HEAD';
+    -- Get HEAD commit (following the symbolic ref to the current branch tip)
+    v_head_commit := pggit.resolve_ref(p_repo_id, 'HEAD');
 
     RETURN QUERY
     WITH RECURSIVE commit_log AS (

@@ -12,11 +12,11 @@ DECLARE
     v_head_commit TEXT;
     v_head_tree TEXT;
 BEGIN
-    -- Get HEAD commit and tree
-    SELECT c.hash, c.tree_hash INTO v_head_commit, v_head_tree
-    FROM pggit.refs r
-    JOIN pggit.commits c ON r.repo_id = p_repo_id AND c.repo_id = r.repo_id AND r.commit_hash = c.hash
-    WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
+    -- Get HEAD commit and tree (resolving the symbolic HEAD to a commit)
+    v_head_commit := pggit.resolve_ref(p_repo_id, 'HEAD');
+    SELECT c.tree_hash INTO v_head_tree
+    FROM pggit.commits c
+    WHERE c.repo_id = p_repo_id AND c.hash = v_head_commit;
 
     RETURN QUERY
     -- Staged changes

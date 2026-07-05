@@ -64,25 +64,27 @@ DECLARE
     v_source_commit TEXT;
     v_target_commit TEXT;
 BEGIN
-    -- Resolve both branches, failing clearly if either is missing.
-    SELECT commit_hash INTO v_source_commit
-    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_source_branch;
+    -- Resolve both branches (following the symbolic HEAD), failing clearly if
+    -- either is missing.
+    v_source_commit := pggit.resolve_ref(p_repo_id, p_source_branch);
     IF v_source_commit IS NULL THEN
         RAISE EXCEPTION 'Branch % does not exist', p_source_branch;
     END IF;
 
-    SELECT commit_hash INTO v_target_commit
-    FROM pggit.refs WHERE repo_id = p_repo_id AND name = p_target_branch;
+    v_target_commit := pggit.resolve_ref(p_repo_id, p_target_branch);
     IF v_target_commit IS NULL THEN
         RAISE EXCEPTION 'Branch % does not exist', p_target_branch;
     END IF;
 
     -- Fast-forward is possible when the target commit is an ancestor of the
-    -- source commit; advance the target ref to the source commit.
+    -- source commit; advance the target to the source commit. Advancing 'HEAD'
+    -- moves the current branch; an explicit branch name moves that branch.
     IF pggit.can_fast_forward(v_target_commit, v_source_commit) THEN
-        UPDATE pggit.refs
-        SET commit_hash = v_source_commit
-        WHERE repo_id = p_repo_id AND name = p_target_branch;
+        IF p_target_branch = 'HEAD' THEN
+            PERFORM pggit.advance_head(p_repo_id, v_source_commit);
+        ELSE
+            PERFORM pggit.update_ref(p_repo_id, p_target_branch, v_source_commit);
+        END IF;
 
         RETURN v_source_commit;
     END IF;

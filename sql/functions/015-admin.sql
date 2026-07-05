@@ -19,8 +19,10 @@ BEGIN
     -- recursive term, so the different edge types (commit->parent, commit->tree,
     -- tree->entries) are expanded in one LATERAL branch off the working row.
     WITH RECURSIVE reachable(object_type, hash) AS (
-        -- Start from pggit.refs
-        SELECT 'commit'::TEXT, commit_hash FROM pggit.refs WHERE repo_id = p_repo_id
+        -- Start from pggit.refs (only direct refs; symbolic refs such as HEAD
+        -- have a NULL commit_hash and are reached through their target branch).
+        SELECT 'commit'::TEXT, commit_hash FROM pggit.refs
+        WHERE repo_id = p_repo_id AND commit_hash IS NOT NULL
         UNION
         SELECT nxt.object_type, nxt.hash
         FROM reachable r

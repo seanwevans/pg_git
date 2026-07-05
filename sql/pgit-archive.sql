@@ -12,17 +12,12 @@ DECLARE
     v_header BYTEA;
     v_footer BYTEA;
 BEGIN
-    -- Resolve tree-ish to tree hash (scoped to this repository).
-    IF p_tree_ish = 'HEAD' THEN
-        SELECT tree_hash INTO v_tree_hash
-        FROM commits c
-        JOIN refs r ON c.repo_id = r.repo_id AND c.hash = r.commit_hash
-        WHERE r.repo_id = p_repo_id AND r.name = 'HEAD';
-    ELSE
-        SELECT tree_hash INTO v_tree_hash
-        FROM commits
-        WHERE repo_id = p_repo_id AND hash = p_tree_ish;
-    END IF;
+    -- Resolve tree-ish to a tree hash. A ref name (the default 'HEAD', a branch)
+    -- resolves through resolve_ref; otherwise treat it as a literal commit hash.
+    SELECT tree_hash INTO v_tree_hash
+    FROM commits
+    WHERE repo_id = p_repo_id
+      AND hash = COALESCE(pggit.resolve_ref(p_repo_id, p_tree_ish), p_tree_ish);
 
     -- Initialize archive based on format
     CASE p_format

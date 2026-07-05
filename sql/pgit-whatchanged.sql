@@ -22,12 +22,9 @@ DECLARE
     v_since_hash TEXT;
     v_until_hash TEXT;
 BEGIN
-    -- Resolve commit references. refs.commit_hash is qualified because
-    -- "commit_hash" is also a RETURNS TABLE OUT parameter, and the lookup is
-    -- scoped to this repository's HEAD rather than any repo's HEAD.
+    -- Resolve commit references (HEAD follows the symbolic ref for this repo).
     IF p_until = 'HEAD' THEN
-        SELECT refs.commit_hash INTO v_until_hash
-        FROM refs WHERE refs.repo_id = p_repo_id AND name = 'HEAD';
+        v_until_hash := pggit.resolve_ref(p_repo_id, 'HEAD');
     ELSE
         v_until_hash := p_until;
     END IF;
