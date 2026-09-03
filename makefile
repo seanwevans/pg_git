@@ -3,6 +3,9 @@ SHELL := /bin/bash
 EXTENSION = pg_git
 EXTVERSION = 0.4.0
 
+# A literal comma cannot be written directly inside a $(call) argument.
+comma := ,
+
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 HAVE_PGXS := $(if $(wildcard $(PGXS)),1,0)
@@ -32,24 +35,75 @@ EXT_SQL = sql/$(EXTENSION)--$(EXTVERSION).sql
 #   1. schema    - base tables (repositories must precede its referencing tables)
 #   2. functions - callable API, numbered to fix ordering
 #   3. features  - advanced command modules
-# CI/control fragments and version-upgrade scripts are intentionally excluded
-# from a fresh install.
+# CI/control fragments are intentionally excluded from a fresh install.
 SCHEMA_PARTS = \
        sql/schema/001-core.sql \
        sql/schema/pgit-schema.sql
 FUNCTION_PARTS = $(sort $(wildcard sql/functions/*.sql))
 FEATURE_PARTS = $(sort $(filter-out \
        sql/pgit-ci.sql \
-       sql/pgit-control.sql \
-       sql/pgit-update.sql \
-       sql/pgit-version.sql \
-       sql/pgit-version-updates.sql \
-       sql/pgit-version-updates-0.2.0--0.3.0.sql, \
+       sql/pgit-control.sql, \
        $(wildcard sql/pgit-*.sql)))
 INSTALL_PARTS = $(SCHEMA_PARTS) $(FUNCTION_PARTS) $(FEATURE_PARTS)
 
-# Only the assembled entrypoint is installed into the extension directory.
-DATA = $(EXT_SQL)
+# Fragments attributed to each released version. A fresh install of version N is
+# the concatenation of every list up to and including N, so the same fragments
+# feed both the install entrypoint and the ALTER EXTENSION ... UPDATE scripts and
+# the two can never disagree. `make check-parts` asserts that the union of these
+# lists is exactly INSTALL_PARTS.
+V0_1_0_PARTS = \
+       $(SCHEMA_PARTS) \
+       sql/functions/001-init.sql \
+       sql/functions/002-add.sql \
+       sql/functions/003-commit.sql \
+       sql/functions/004-log.sql \
+       sql/functions/005-status.sql \
+       sql/functions/006-branch.sql \
+       sql/functions/007-merge.sql \
+       sql/functions/008-diff.sql \
+       sql/functions/009-reset.sql
+V0_2_0_PARTS = \
+       sql/functions/010-tag.sql \
+       sql/functions/011-remote.sql
+V0_3_0_PARTS = \
+       sql/functions/012-migrations.sql \
+       sql/functions/013-merge-conflicts.sql \
+       sql/functions/014-https.sql \
+       sql/functions/015-admin.sql \
+       sql/pgit-advanced-commands.sql \
+       sql/pgit-extras.sql \
+       sql/pgit-plumbing.sql
+V0_4_0_PARTS = \
+       sql/pgit-archive.sql \
+       sql/pgit-bundle.sql \
+       sql/pgit-diagnose.sql \
+       sql/pgit-instaweb.sql \
+       sql/pgit-merge-tree.sql \
+       sql/pgit-pack-refs.sql \
+       sql/pgit-repack.sql \
+       sql/pgit-replace.sql \
+       sql/pgit-rerere.sql \
+       sql/pgit-sparse.sql \
+       sql/pgit-submodule.sql \
+       sql/pgit-verify-commit.sql \
+       sql/pgit-verify-tag.sql \
+       sql/pgit-whatchanged.sql
+
+# ALTER EXTENSION pg_git UPDATE discovers these by filename only: PostgreSQL
+# looks for $(EXTENSION)--<from>--<to>.sql in the extension directory and will
+# not find a script under any other name.
+UPGRADE_0_1_0_TO_0_2_0 = sql/$(EXTENSION)--0.1.0--0.2.0.sql
+UPGRADE_0_2_0_TO_0_3_0 = sql/$(EXTENSION)--0.2.0--0.3.0.sql
+UPGRADE_0_3_0_TO_0_4_0 = sql/$(EXTENSION)--0.3.0--0.4.0.sql
+UPGRADE_SQL = \
+       $(UPGRADE_0_1_0_TO_0_2_0) \
+       $(UPGRADE_0_2_0_TO_0_3_0) \
+       $(UPGRADE_0_3_0_TO_0_4_0)
+
+# The assembled entrypoint plus every upgrade script must land in the extension
+# directory; an upgrade script that is not installed is an upgrade path that
+# does not exist.
+DATA = $(EXT_SQL) $(UPGRADE_SQL)
 
 # Deterministic, fast SQL tests that run on every change.
 CORE_TESTS := \
@@ -93,30 +147,64 @@ else
 $(warning PGXS makefile not found at $(PGXS); build/install targets are unavailable in this environment.)
 endif
 
-# Assemble the single-file install script from the modular fragments. Plain
-# concatenation in dependency order; the fragments contain no psql meta-commands.
-$(EXT_SQL): $(INSTALL_PARTS)
+# Assemble a generated SQL script from the modular fragments. Plain
+# concatenation in dependency order; the fragments contain no psql meta-commands
+# (CREATE EXTENSION and ALTER EXTENSION ... UPDATE run the script through the
+# server, which cannot process psql \i/\ir includes).
+#   $(1) output path   $(2) title   $(3) source description   $(4) fragments
+define assemble_sql
 	@printf '%s\n' \
-	  '-- pg_git $(EXTVERSION)' \
+	  '-- pg_git $(2)' \
 	  '-- GENERATED FILE -- DO NOT EDIT.' \
-	  '-- Assembled from sql/schema/*.sql, sql/functions/*.sql and sql/pgit-*.sql.' \
-	  '-- Regenerate with: make $(EXT_SQL)' > $@
-	@for f in $(INSTALL_PARTS); do \
-	  printf '\n-- ===== %s =====\n' "$$f" >> $@; \
-	  cat "$$f" >> $@; \
+	  '-- $(3)' \
+	  '-- Regenerate with: make $(1)' > $(1)
+	@for f in $(4); do \
+	  printf '\n-- ===== %s =====\n' "$$f" >> $(1); \
+	  cat "$$f" >> $(1); \
 	done
-	@echo "Generated $@ from $(words $(INSTALL_PARTS)) fragments."
+	@echo "Generated $(1) from $(words $(4)) fragments."
+endef
 
-# Ensure the entrypoint is (re)assembled as part of the default build.
-all: $(EXT_SQL)
+$(EXT_SQL): $(INSTALL_PARTS)
+	$(call assemble_sql,$@,$(EXTVERSION),Assembled from sql/schema/*.sql$(comma) sql/functions/*.sql and sql/pgit-*.sql.,$(INSTALL_PARTS))
 
-.PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose check-pg_prove
+# Upgrade deltas. Each script carries only the fragments introduced by its
+# target version, so applying them in sequence over an older install reaches the
+# same object set as a fresh install of the newer version.
+$(UPGRADE_0_1_0_TO_0_2_0): $(V0_2_0_PARTS)
+	$(call assemble_sql,$@,0.1.0 -> 0.2.0,Objects added in 0.2.0.,$(V0_2_0_PARTS))
+
+$(UPGRADE_0_2_0_TO_0_3_0): $(V0_3_0_PARTS)
+	$(call assemble_sql,$@,0.2.0 -> 0.3.0,Objects added in 0.3.0.,$(V0_3_0_PARTS))
+
+$(UPGRADE_0_3_0_TO_0_4_0): $(V0_4_0_PARTS)
+	$(call assemble_sql,$@,0.3.0 -> 0.4.0,Objects added in 0.4.0.,$(V0_4_0_PARTS))
+
+# Ensure the entrypoint and upgrade scripts are (re)assembled as part of the
+# default build.
+all: $(EXT_SQL) $(UPGRADE_SQL)
+
+.PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose check-pg_prove check-parts
 
 check-pg_prove:
 	@command -v pg_prove >/dev/null 2>&1 || { \
 		echo "pg_prove not found. Install pgTAP test runner (e.g., apt install libtap-parser-sourcehandler-pgtap-perl)."; \
 		exit 127; \
 	}
+
+# Guard the invariant the upgrade scripts rest on: the per-version fragment
+# lists must partition INSTALL_PARTS exactly. If a new fragment is added to the
+# install without being attributed to a version, upgrading installs would
+# silently miss it.
+check-parts:
+	@if [ "$(sort $(INSTALL_PARTS))" != "$(sort $(V0_1_0_PARTS) $(V0_2_0_PARTS) $(V0_3_0_PARTS) $(V0_4_0_PARTS))" ]; then \
+		echo "Fragment lists are out of sync with INSTALL_PARTS."; \
+		echo "  install : $(sort $(INSTALL_PARTS))"; \
+		echo "  versions: $(sort $(V0_1_0_PARTS) $(V0_2_0_PARTS) $(V0_3_0_PARTS) $(V0_4_0_PARTS))"; \
+		echo "Add the new fragment to the V0_x_y_PARTS list for the version that introduces it."; \
+		exit 1; \
+	fi
+	@echo "Fragment lists cover every install fragment exactly once."
 
 # Keep `make test` as fast default.
 test: test-core
