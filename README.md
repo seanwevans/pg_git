@@ -123,6 +123,12 @@ Test suites are split by speed and external dependencies:
 - `test-performance` (opt-in): GC performance regression checks in `test/sql/gc_performance_test.sql`. **Expected runtime:** ~1-5+ minutes depending on machine load. **Prerequisites:** set `RUN_PERF=1`; stable CPU/IO for consistent measurements.
 - `test-all`: runs `test-core` and then conditionally runs integration/performance suites when their flags are enabled.
 
+In CI, `test-core` runs on every push and pull request. The HTTPS integration
+suite additionally runs on any pull request that touches an HTTPS file, so
+changes to the transport are exercised before they land rather than at the next
+weekly run. The performance suite stays on the weekly schedule (and
+`workflow_dispatch`), since it is slow and sensitive to runner load.
+
 ```bash
 # Fast default suite (also what `make test` runs)
 make test-core
