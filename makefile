@@ -1,7 +1,18 @@
 SHELL := /bin/bash
 
-EXTENSION = pg_git
-EXTVERSION = 0.4.0
+EXTNAME = pg_git
+EXTVERSION = 0.5.0
+
+# Optional companion extension carrying the HTTPS transport. It is split out
+# because it is the only part of the project that needs plpython3u, which is
+# untrusted and therefore unavailable on managed PostgreSQL. Its SQL is
+# hand-written rather than assembled, so it needs no fragment list.
+HTTPS_EXTNAME = pg_git_https
+HTTPS_EXTVERSION = 0.1.0
+HTTPS_SQL = sql/$(HTTPS_EXTNAME)--$(HTTPS_EXTVERSION).sql
+
+# PGXS installs one <name>.control file per name listed here.
+EXTENSION = $(EXTNAME) $(HTTPS_EXTNAME)
 
 # A literal comma cannot be written directly inside a $(call) argument.
 comma := ,
@@ -29,7 +40,7 @@ PG_PROVE := PGHOST=$(PGHOST) PGPORT=$(PGPORT) PGUSER=$(PGUSER) PGDATABASE=$(PGDA
 # CREATE EXTENSION machinery cannot process psql \i/\ir includes, this script
 # is assembled from the modular SQL fragments below (see the rule near the end
 # of this file). It is a generated artifact: edit the fragments, not this file.
-EXT_SQL = sql/$(EXTENSION)--$(EXTVERSION).sql
+EXT_SQL = sql/$(EXTNAME)--$(EXTVERSION).sql
 
 # Fragments composing the install script, in load order:
 #   1. schema    - base tables (repositories must precede its referencing tables)
@@ -51,6 +62,9 @@ INSTALL_PARTS = $(SCHEMA_PARTS) $(FUNCTION_PARTS) $(FEATURE_PARTS)
 # feed both the install entrypoint and the ALTER EXTENSION ... UPDATE scripts and
 # the two can never disagree. `make check-parts` asserts that the union of these
 # lists is exactly INSTALL_PARTS.
+#
+# 0.5.0 adds no fragments -- it only moves the HTTPS transport out of core -- so
+# it has no list here.
 V0_1_0_PARTS = \
        $(SCHEMA_PARTS) \
        sql/functions/001-init.sql \
@@ -68,7 +82,6 @@ V0_2_0_PARTS = \
 V0_3_0_PARTS = \
        sql/functions/012-migrations.sql \
        sql/functions/013-merge-conflicts.sql \
-       sql/functions/014-https.sql \
        sql/functions/015-admin.sql \
        sql/pgit-advanced-commands.sql \
        sql/pgit-extras.sql \
@@ -90,20 +103,25 @@ V0_4_0_PARTS = \
        sql/pgit-whatchanged.sql
 
 # ALTER EXTENSION pg_git UPDATE discovers these by filename only: PostgreSQL
-# looks for $(EXTENSION)--<from>--<to>.sql in the extension directory and will
+# looks for $(EXTNAME)--<from>--<to>.sql in the extension directory and will
 # not find a script under any other name.
-UPGRADE_0_1_0_TO_0_2_0 = sql/$(EXTENSION)--0.1.0--0.2.0.sql
-UPGRADE_0_2_0_TO_0_3_0 = sql/$(EXTENSION)--0.2.0--0.3.0.sql
-UPGRADE_0_3_0_TO_0_4_0 = sql/$(EXTENSION)--0.3.0--0.4.0.sql
-UPGRADE_SQL = \
+UPGRADE_0_1_0_TO_0_2_0 = sql/$(EXTNAME)--0.1.0--0.2.0.sql
+UPGRADE_0_2_0_TO_0_3_0 = sql/$(EXTNAME)--0.2.0--0.3.0.sql
+UPGRADE_0_3_0_TO_0_4_0 = sql/$(EXTNAME)--0.3.0--0.4.0.sql
+GENERATED_UPGRADE_SQL = \
        $(UPGRADE_0_1_0_TO_0_2_0) \
        $(UPGRADE_0_2_0_TO_0_3_0) \
        $(UPGRADE_0_3_0_TO_0_4_0)
 
+# 0.4.0 -> 0.5.0 removes objects rather than adding them, so it is hand-written
+# instead of assembled from install fragments.
+UPGRADE_0_4_0_TO_0_5_0 = sql/$(EXTNAME)--0.4.0--0.5.0.sql
+UPGRADE_SQL = $(GENERATED_UPGRADE_SQL) $(UPGRADE_0_4_0_TO_0_5_0)
+
 # The assembled entrypoint plus every upgrade script must land in the extension
 # directory; an upgrade script that is not installed is an upgrade path that
-# does not exist.
-DATA = $(EXT_SQL) $(UPGRADE_SQL)
+# does not exist. The companion extension ships its own control file and script.
+DATA = $(EXT_SQL) $(UPGRADE_SQL) $(HTTPS_SQL)
 
 # Deterministic, fast SQL tests that run on every change.
 CORE_TESTS := \
@@ -182,7 +200,7 @@ $(UPGRADE_0_3_0_TO_0_4_0): $(V0_4_0_PARTS)
 
 # Ensure the entrypoint and upgrade scripts are (re)assembled as part of the
 # default build.
-all: $(EXT_SQL) $(UPGRADE_SQL)
+all: $(EXT_SQL) $(GENERATED_UPGRADE_SQL)
 
 .PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose check-pg_prove check-parts
 

@@ -49,4 +49,5 @@ Use the same `make test` entrypoint in both environments so prerequisite checks 
 | Local PostgreSQL | `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` (defaults in `makefile` target localhost:5432/postgres) | `make test` |
 | Docker Compose | `PGHOST=db`, `PGPORT=5432`, `PGUSER=postgres`, `PGDATABASE=pg_git_dev` | `docker-compose run --rm test` |
 
-`make test` depends on `test-preflight`, which validates DB connectivity, required extensions (`pgcrypto`, `pg_trgm`, `plpython3u`), and `pg_prove` availability before running SQL tests.
+`make test` depends on `test-preflight`, which validates DB connectivity, required extensions (`pgcrypto`, `pg_trgm`; `plpython3u` only for the
+opt-in HTTPS integration suite), and `pg_prove` availability before running SQL tests.

@@ -1,5 +1,7 @@
 FROM postgres:14
 
+# postgresql-plpython3-14 is not needed by core pg_git; it is here so the
+# opt-in HTTPS integration suite can install the pg_git_https extension.
 RUN apt-get update && apt-get install -y \
     build-essential \
     postgresql-server-dev-14 \
