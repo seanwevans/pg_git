@@ -2,7 +2,7 @@
     "name": "pg_git",
     "abstract": "Git implementation in PostgreSQL",
     "description": "A PostgreSQL extension implementing Git-like version control functionality using native database features",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "maintainer": [
         "Sean Evans <sean.w.evans@gmail.com>"
     ],
@@ -10,9 +10,15 @@
     "provides": {
         "pg_git": {
             "abstract": "Git implementation in PostgreSQL",
-            "file": "sql/pg_git--0.4.0.sql",
+            "file": "sql/pg_git--0.5.0.sql",
             "docfile": "README.md",
-            "version": "0.4.0"
+            "version": "0.5.0"
+        },
+        "pg_git_https": {
+            "abstract": "Optional HTTPS transport for pg_git",
+            "file": "sql/pg_git_https--0.1.0.sql",
+            "docfile": "README.md",
+            "version": "0.1.0"
         }
     },
     "prereqs": {
@@ -21,7 +27,9 @@
                 "PostgreSQL": "12.0.0",
                 "plpgsql": 0,
                 "pgcrypto": 0,
-                "pg_trgm": 0,
+                "pg_trgm": 0
+            },
+            "recommends": {
                 "plpython3u": 0
             }
         }
@@ -47,8 +55,9 @@
     ],
     "x_feature_dependencies": {
         "https_transport": {
+            "extension": "pg_git_https",
             "uses": "plpython3u",
-            "note": "plpython3u is required at extension install time because HTTPS helper functions are defined in LANGUAGE plpython3u; non-HTTPS workflows do not call those functions directly."
+            "note": "HTTPS fetching is defined in LANGUAGE plpython3u, which is untrusted and unavailable on managed PostgreSQL. It ships as the separate pg_git_https extension so core pg_git installs without it; run CREATE EXTENSION pg_git_https to enable HTTPS remotes."
         }
     }
 }

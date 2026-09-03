@@ -1,10 +1,15 @@
 -- Path: /test/sql/https_fetch_test.sql
--- Tests for pggit.http_fetch.
+-- Tests for pggit.http_fetch, which ships in the optional pg_git_https
+-- companion extension rather than in core pg_git.
 --
 -- These exercise the success path, the read-timeout path and TLS certificate
 -- verification. To keep the suite deterministic in CI they run against local
 -- servers started inside the backend rather than third-party endpoints, so the
 -- result never depends on the availability of an external service.
+
+-- The only test that needs plpython3u, so it is the only one that installs
+-- the companion extension.
+CREATE EXTENSION IF NOT EXISTS pg_git_https CASCADE;
 
 BEGIN;
 
