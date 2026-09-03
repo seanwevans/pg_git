@@ -5,74 +5,58 @@ A PostgreSQL-native Git implementation.
 
 ## Features
 
-> **Implemented vs Planned**
-> - ✅ **Implemented**: Backed by concrete SQL functions in `sql/functions/*.sql`.
-> - 🧭 **Planned / Aspirational**: Mentioned for roadmap/completeness, but not currently exported as callable functions.
+> **Status markers** — every entry below carries one.
+> - ✅ **Implemented**: exported by `sql/functions/*.sql` or `sql/pgit-*.sql`, and does the work in the database.
+> - ⚠️ **Partial**: exported and callable, but a named part of it is a placeholder. The note says which part.
+> - 🧭 **Planned / Aspirational**: mentioned for roadmap completeness, not exported as a callable function.
 
-### Core Operations (Implemented)
-- Repository initialization (`init_repository`)
-- File staging (`stage_file`, `unstage_file`)
-- Commit creation (`commit_index`)
-- Commit history and status (`get_log`, `get_decorated_log`, `get_status`, `get_formatted_status`)
-- Branch management (`create_branch`, `list_branches`, `checkout_branch`)
-- Merge primitives (`find_merge_base`, `can_fast_forward`, `merge_branches`)
-- Diff operations (`diff_text`, `diff_blobs`, `diff_commits`)
-- Reset operations (`reset_soft`, `reset_mixed`, `reset_file`)
-- Tag operations (`create_tag`, `list_tags`)
-- Remote operations (`add_remote`, `fetch_remote`, `push`, `pull`, `clone`)
+### Core Operations
+- ✅ Repository initialization (`init_repository`)
+- ✅ File staging (`stage_file`, `unstage_file`)
+- ✅ Commit creation (`commit_index`)
+- ✅ Commit history and status (`get_log`, `get_decorated_log`, `get_status`, `get_formatted_status`)
+- ✅ Branch management (`create_branch`, `list_branches`, `checkout_branch`)
+- ✅ Diff operations (`diff_text`, `diff_blobs`, `diff_commits`)
+- ✅ Reset operations (`reset_soft`, `reset_mixed`, `reset_file`)
+- ✅ Tag operations (`create_tag`, `list_tags`)
+- ✅ Merge conflict detection (`can_auto_merge`, `detect_conflicts`)
+- ⚠️ Merge (`find_merge_base`, `can_fast_forward`, `merge_branches`) — fast-forward only; `merge_branches` raises `Only fast-forward merges are currently supported` on a divergent history
+- ⚠️ Remote operations (`add_remote`, `fetch_remote`, `pull`, `clone`, `push`) — `push` resolves the ref and raises a notice; it does not transfer objects to the remote
 
 ### Advanced Operations
-- Submodule support
-- Sparse checkout for large repositories
-- Archive creation
-- GPG signature verification for commits and tags
-- Reuse recorded resolution (rerere)
-- Repository diagnostics
-- Whatchanged view
-- Instaweb interface
-- Pack and repack support
-- Object replacement
-- Remote operations with HTTPS transport (optional `pg_git_https` extension)
-- Stash management
-- Worktree support
-- Bisect debugging
-- Blame tracking
-- Cherry-pick and revert
-- Grep functionality
+- ✅ Stash management (`stash_save`, `stash_pop`)
+- ✅ Worktree support (`add_worktree`)
+- ✅ Commit notes (`add_note`)
+- ✅ Blame tracking (`blame`)
+- ✅ Bisect debugging (`bisect_start`, `bisect_good`, `bisect_bad`, `bisect_reset`)
+- ✅ Cherry-pick and revert (`cherry_pick`, `revert`)
+- ✅ Grep functionality (`grep`)
+- ✅ Submodule support (`submodule_add`, `submodule_update`, `submodule_update_recursive`)
+- ✅ Sparse checkout for large repositories (`sparse_checkout_set`, `sparse_checkout_add`, `is_path_in_sparse_checkout`, `get_tree_files`)
+- ✅ Reuse recorded resolution / rerere (`record_resolution`, `find_resolution`, `clear_rerere_cache`)
+- ✅ Tree-level merge (`merge_trees`)
+- ✅ Whatchanged view (`whatchanged`)
+- ✅ Repository diagnostics (`collect_diagnostics`, `get_diagnostic_report`)
+- ✅ Object replacement (`replace`, `get_replaced_hash`, `remove_replace`, `list_replace`)
+- ✅ Pack refs optimization (`pack_refs`, `unpack_refs`, `verify_packed_refs`)
+- ✅ Repack support (`repack`, `unpack`)
+- ✅ Bundles (`create_bundle`, `unbundle`)
+- ✅ HTTPS transport and credential storage (`store_credentials`, `http_fetch`) — the only feature that needs `plpython3u`
+- ⚠️ Archive creation (`create_archive`) — walks the tree and concatenates blob contents, but the tar/zip headers are placeholders, so the result is not a valid archive for `tar`/`unzip`
+- ⚠️ GPG signature verification (`add_gpg_key`, `sign_commit`, `verify_commit`, `sign_tag`, `verify_tag`, `verify_all_tags`) — stores signatures and enforces key trust levels, but performs no cryptographic verification: any stored signature is reported valid
+- ⚠️ Instaweb interface (`generate_repo_view`, `start_instaweb`, `stop_instaweb`) — renders repository HTML and records the listener config, but starts no web server; `start_instaweb` returns the URL it would serve on
 
 ### Administrative
-- Garbage collection
-- File system check
-- Reflog
-- Repository maintenance
-- Schema migrations
-- Pack refs optimization
-- ✅ HTTPS transport and credential storage (`store_credentials`, `http_fetch`) — ships in the optional `pg_git_https` extension
-- ✅ Merge conflict detection (`detect_conflicts`)
-- 🧭 Submodule support
-- 🧭 Sparse checkout for large repositories
-- 🧭 Archive creation
-- 🧭 GPG signature verification for commits and tags
-- 🧭 Reuse recorded resolution (rerere)
-- 🧭 Repository diagnostics / whatchanged view / instaweb interface
-- 🧭 Pack and repack support
-- 🧭 Object replacement
-- 🧭 Stash management
-- 🧭 Worktree support
-- 🧭 Bisect debugging
-- 🧭 Blame tracking
-- 🧭 Cherry-pick and revert
-- 🧭 Grep functionality
-
-### Administrative (Implemented)
-- Schema migration helpers (`get_current_schema_version`, `run_migration`)
-- Garbage collection (`gc`)
-- Repository integrity checks (`verify_integrity`)
-- Index maintenance / optimization (`optimize_indexes`)
+- ✅ Schema migration helpers (`get_current_schema_version`, `run_migration`)
+- ✅ Garbage collection (`gc`)
+- ✅ Repository integrity checks (`verify_integrity`)
+- ✅ Index maintenance / optimization (`optimize_indexes`)
+- 🧭 Reflog
+- 🧭 File system check (beyond what `verify_integrity` covers)
 
 ### Plumbing Commands
-- ✅ Tree/index plumbing: `create_tree_from_index`
-- 🧭 Additional low-level commands (`cat-file`, `hash-object`, `ls-tree`, `rev-list`, and more)
+- ✅ Tree/index plumbing (`create_tree_from_index`)
+- ✅ Object and history plumbing (`cat_file`, `hash_object`, `ls_tree`, `rev_list`, `merge_base`)
 
 ---
 
