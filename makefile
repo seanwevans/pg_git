@@ -110,6 +110,22 @@ $(EXT_SQL): $(INSTALL_PARTS)
 # Ensure the entrypoint is (re)assembled as part of the default build.
 all: $(EXT_SQL)
 
+# Fail if the committed generated SQL does not match what the fragments produce.
+# `make` alone cannot catch this: it decides by timestamp, and in a fresh clone
+# every file is written at about the same moment, so an out-of-date artifact can
+# look up to date and get silently rebuilt (or not) without anyone noticing. -B
+# forces the rebuild so the comparison is against real output.
+.PHONY: check-generated
+check-generated:
+	@$(MAKE) --no-print-directory -B $(EXT_SQL)
+	@if ! git diff --exit-code -- $(EXT_SQL); then \
+		echo; \
+		echo "$(EXT_SQL) is out of sync with the fragments it is generated from."; \
+		echo "Run 'make $(EXT_SQL)' and commit the result; do not edit it by hand."; \
+		exit 1; \
+	fi
+	@echo "$(EXT_SQL) matches its fragments."
+
 .PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose check-pg_prove
 
 check-pg_prove:
