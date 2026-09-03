@@ -2,7 +2,9 @@
 -- pg_git initialization tests
 
 CREATE EXTENSION IF NOT EXISTS pgtap;
--- CASCADE auto-installs the required extensions (pgcrypto, pg_trgm, plpython3u).
+-- CASCADE auto-installs the required extensions (pgcrypto, pg_trgm). The HTTPS
+-- transport lives in the optional pg_git_https extension; only
+-- https_fetch_test.sql installs it.
 CREATE EXTENSION IF NOT EXISTS pg_git CASCADE;
 
 BEGIN;

@@ -1,0 +1,5 @@
+comment = 'HTTPS transport for pg_git'
+default_version = '0.1.0'
+schema = pggit
+relocatable = false
+requires = 'pg_git,plpython3u'

@@ -61,7 +61,7 @@ A PostgreSQL-native Git implementation.
 ---
 
 The `pg_git.control` file provides PostgreSQL with metadata about the
-extension and instructs it to load `sql/pg_git--0.4.0.sql` when the
+extension and instructs it to load `sql/pg_git--0.5.0.sql` when the
 extension is created. Both the control file and the SQL script are
 installed by `make install`. The install script is generated from the
 modular fragments under `sql/schema/`, `sql/functions/` and `sql/pgit-*.sql`
@@ -74,36 +74,58 @@ modular fragments under `sql/schema/`, `sql/functions/` and `sql/pgit-*.sql`
 
 ## Dependencies
 
-### Required (extension install/runtime)
+### Required (`pg_git`)
 - PostgreSQL 12+
 - PL/pgSQL (`plpgsql`)
 - `pgcrypto`
 - `pg_trgm`
+
+All of these are trusted or built in, so `pg_git` installs on managed
+PostgreSQL (RDS, Cloud SQL, Supabase, Neon) as well as on self-hosted servers.
+
+### Required (`pg_git_https`, optional companion extension)
+- `pg_git`
 - `plpython3u`
 
-### Optional (feature usage)
-- None currently. All listed dependencies are required to install `pg_git` as shipped.
-
-> **Why `plpython3u` is required:** the extension defines HTTPS helper functions (for example `pggit.http_fetch`) in `LANGUAGE plpython3u`. That means `plpython3u` must be present when `CREATE EXTENSION pg_git` runs. In practice, only HTTPS-related features use those functions directly.
+> **Why HTTPS is a separate extension:** `pggit.http_fetch` is defined in
+> `LANGUAGE plpython3u`, which is untrusted — it requires superuser and is not
+> offered by managed PostgreSQL providers. Listing it in `pg_git`'s `requires`
+> made the whole extension uninstallable there, so the HTTPS transport ships as
+> `pg_git_https` instead. Everything else in `pg_git` is unaffected; install the
+> companion only if you need HTTPS remotes.
 
 ## Installation
 ```bash
 make && make install
 
-# In PostgreSQL: CASCADE auto-installs the required extensions
-# (pgcrypto, pg_trgm, plpython3u).
+# Core extension. CASCADE auto-installs pgcrypto and pg_trgm.
 CREATE EXTENSION pg_git CASCADE;
+
+# Optional: HTTPS transport. Needs plpython3u, so it requires a self-hosted
+# server (or any provider that offers plpython3u).
+CREATE EXTENSION pg_git_https CASCADE;
 
 # Alternatively, from the command line:
 # psql -d yourdb -c "CREATE EXTENSION pg_git CASCADE;"
 ```
+
+### Upgrading from 0.4.0 or earlier
+```sql
+ALTER EXTENSION pg_git UPDATE;
+```
+The 0.4.0 -> 0.5.0 step releases `pggit.credentials`, `pggit.store_credentials`
+and `pggit.http_fetch` from `pg_git` without dropping them, so stored
+credentials are preserved. If you use HTTPS remotes, follow it with
+`CREATE EXTENSION pg_git_https;` to bring those objects back under extension
+management. If you do not, drop the three leftovers — the SQL is spelled out at
+the top of `sql/pg_git--0.4.0--0.5.0.sql`.
 
 ## Testing
 
 Test suites are split by speed and external dependencies:
 
 - `test-core` (default): deterministic SQL tests for local logic. **Expected runtime:** ~10-30 seconds in Docker on a modern laptop. **Prerequisites:** running PostgreSQL test database.
-- `test-integration` (opt-in): HTTPS transport checks in `test/sql/https_fetch_test.sql`. **Expected runtime:** ~30-90 seconds depending on network/container startup. **Prerequisites:** set `RUN_INTEGRATION=1`; `plpython3u` available; outbound HTTPS/network available.
+- `test-integration` (opt-in): HTTPS transport checks in `test/sql/https_fetch_test.sql`. **Expected runtime:** ~30-90 seconds depending on network/container startup. **Prerequisites:** set `RUN_INTEGRATION=1`; `plpython3u` available so the test can install `pg_git_https`. The test serves its own endpoints on loopback, so no outbound network is needed.
 - `test-performance` (opt-in): GC performance regression checks in `test/sql/gc_performance_test.sql`. **Expected runtime:** ~1-5+ minutes depending on machine load. **Prerequisites:** set `RUN_PERF=1`; stable CPU/IO for consistent measurements.
 - `test-all`: runs `test-core` and then conditionally runs integration/performance suites when their flags are enabled.
 
@@ -159,7 +181,7 @@ SELECT pggit.checkout_branch(1, 'feature');
 -- Merge Branch
 SELECT pggit.merge_branches(1, 'feature', 'main');
 
--- Remote operations with HTTPS
+-- Remote operations with HTTPS (requires: CREATE EXTENSION pg_git_https)
 -- Set encryption key for storing credentials
 ALTER SYSTEM SET pggit.credential_key = 'my_secret';
 SELECT pg_reload_conf();
@@ -184,7 +206,7 @@ SELECT * FROM pggit.list_tags(1);
 ```
 
 ## Version
-Current: 0.4.0
+Current: `pg_git` 0.5.0, `pg_git_https` 0.1.0
 
 ## License
 See [LICENSE](LICENSE) for the full text of the PostgreSQL License.
