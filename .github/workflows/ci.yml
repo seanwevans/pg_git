@@ -14,6 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Must run before anything else invokes make: `make` regenerates
+      # sql/pg_git--<version>.sql in place, so a build step would quietly repair
+      # a hand-edited or un-regenerated file and the drift would never surface.
+      - name: Check generated SQL is in sync with its fragments
+        run: make check-generated
       - name: Build and install extension
         run: |
           make

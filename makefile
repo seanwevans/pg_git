@@ -198,11 +198,23 @@ $(UPGRADE_0_2_0_TO_0_3_0): $(V0_3_0_PARTS)
 $(UPGRADE_0_3_0_TO_0_4_0): $(V0_4_0_PARTS)
 	$(call assemble_sql,$@,0.3.0 -> 0.4.0,Objects added in 0.4.0.,$(V0_4_0_PARTS))
 
-# Ensure the entrypoint and upgrade scripts are (re)assembled as part of the
-# default build.
-all: $(EXT_SQL) $(GENERATED_UPGRADE_SQL)
+# Fail if the committed generated SQL does not match what the fragments produce.
+# `make` alone cannot catch this: it decides by timestamp, and in a fresh clone
+# every file is written at about the same moment, so an out-of-date artifact can
+# look up to date and get silently rebuilt (or not) without anyone noticing. -B
+# forces the rebuild so the comparison is against real output.
+.PHONY: check-generated
+check-generated:
+	@$(MAKE) --no-print-directory -B $(EXT_SQL)
+	@if ! git diff --exit-code -- $(EXT_SQL); then \
+		echo; \
+		echo "$(EXT_SQL) is out of sync with the fragments it is generated from."; \
+		echo "Run 'make $(EXT_SQL)' and commit the result; do not edit it by hand."; \
+		exit 1; \
+	fi
+	@echo "$(EXT_SQL) matches its fragments."
 
-.PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose check-pg_prove check-parts
+.PHONY: test test-core test-integration test-performance test-all test-one test-one-verbose check-pg_prove
 
 check-pg_prove:
 	@command -v pg_prove >/dev/null 2>&1 || { \

@@ -9,6 +9,17 @@ Before cutting a release, complete all of the following:
 3. **Update `meta.json`** so package/version metadata matches the release.
 4. **Verify versioned SQL file references** are consistent across repository metadata and install/upgrade paths.
 
+## Generated Files
+
+`sql/pg_git--<version>.sql` is assembled by the makefile from the fragments under
+`sql/schema/`, `sql/functions/` and `sql/pgit-*.sql`. Edit the fragments, then run
+`make` and commit the regenerated file alongside them; never edit the generated
+file directly.
+
+`make check-generated` regenerates it and fails if the result differs from what is
+committed. CI runs this before any other build step, so a hand edit or a forgotten
+regeneration fails the build instead of being silently overwritten.
+
 ## Test Checklist
 
 When adding or changing functionality, ensure tests are updated:
