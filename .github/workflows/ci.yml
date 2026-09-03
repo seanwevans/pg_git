@@ -22,6 +22,53 @@ jobs:
         run: |
           docker compose up --abort-on-container-exit --exit-code-from test test
 
+  # The HTTPS transport has the messiest failure modes in the project (TLS,
+  # timeouts, credential decryption) and the only suite that covers it used to
+  # run once a week, so a broken change could sit on main for six days. Run that
+  # suite on any pull request that touches HTTPS, while leaving the performance
+  # suite -- which is slow and machine-sensitive -- on the weekly schedule.
+  detect-https-changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      touched: ${{ steps.filter.outputs.touched }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Look for changes to HTTPS files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # Every HTTPS-related path in the repository has "https" in its
+          # basename (sql/functions/014-https.sql,
+          # test/sql/https_fetch_test.sql), so match on that rather than on a
+          # list of exact paths that goes stale the moment a file is renamed.
+          if git diff --name-only "$BASE_SHA" "$GITHUB_SHA" \
+               | grep -qiE '(^|/)[^/]*https[^/]*$'; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Changed HTTPS files:"
+          git diff --name-only "$BASE_SHA" "$GITHUB_SHA" \
+            | grep -iE '(^|/)[^/]*https[^/]*$' || echo "  (none)"
+
+  test-https-integration:
+    needs: detect-https-changes
+    if: needs.detect-https-changes.outputs.touched == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and install extension
+        run: |
+          make
+          sudo make install
+      - name: Run HTTPS integration suite
+        run: |
+          docker compose run --rm -e RUN_INTEGRATION=1 test make test-integration
+
   test-slow-suites:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
